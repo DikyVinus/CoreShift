@@ -1,21 +1,2 @@
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-        maven {
-            url "https://api.github.com/repos/RikkaApps/RikkaMaven/raw/main"
-        }
-    }
-}
-
-rootProject.name = "core.coreshift.policy"
+rootProject.name = "CoreShift"
 include(":app")

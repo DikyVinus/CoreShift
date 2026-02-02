@@ -1,0 +1,80 @@
+package core.coreshift.policy
+
+import android.content.Context
+import android.os.Build
+import java.io.File
+import java.io.FileOutputStream
+
+object BinaryInstaller {
+
+    fun installAll(context: Context) {
+        val abi = selectAbi()
+        val binDir = File(context.filesDir, "bin")
+
+        if (!binDir.exists()) binDir.mkdirs()
+
+        installAssets(context, abi, binDir)
+        installNativeLibs(context, binDir)
+    }
+
+    private fun selectAbi(): String {
+        val supported = Build.SUPPORTED_ABIS
+        return when {
+            supported.contains("arm64-v8a") -> "arm64-v8a"
+            supported.contains("armeabi-v7a") -> "armeabi-v7a"
+            else -> error("Unsupported ABI: ${supported.joinToString()}")
+        }
+    }
+
+    private fun installAssets(context: Context, abi: String, binDir: File) {
+        val assetPath = "native/$abi"
+        val am = context.assets
+        val files = am.list(assetPath) ?: return
+
+        for (name in files) {
+            val out = File(binDir, name)
+            if (out.exists()) continue
+
+            am.open("$assetPath/$name").use { input ->
+                FileOutputStream(out).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            when {
+                name.endsWith(".dex") -> {
+                    // Android 14+ requirement: dex MUST NOT be writable
+                    out.setReadable(true, true)
+                    out.setExecutable(false, true)
+                    out.setWritable(false, true)
+                }
+                else -> {
+                    // Executables
+                    out.setReadable(true, true)
+                    out.setExecutable(true, true)
+                    out.setWritable(false, true)
+                }
+            }
+        }
+    }
+
+    private fun installNativeLibs(context: Context, binDir: File) {
+        val libDir = File(context.applicationInfo.nativeLibraryDir)
+        if (!libDir.exists()) return
+
+        libDir.listFiles()?.forEach { lib ->
+            val out = File(binDir, lib.name)
+            if (out.exists()) return@forEach
+
+            lib.inputStream().use { input ->
+                FileOutputStream(out).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            out.setReadable(true, true)
+            out.setExecutable(true, true)
+            out.setWritable(false, true)
+        }
+    }
+}

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace "core.coreshift.policy"
+    namespace 'core.coreshift.policy'
     compileSdk 34
 
     defaultConfig {
@@ -13,24 +13,16 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
-
-        ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a"
-        }
     }
 
     buildTypes {
+        debug {
+            debuggable true
+        }
         release {
             minifyEnabled false
-            shrinkResources false
+            debuggable false
         }
-        debug {
-            minifyEnabled false
-        }
-    }
-
-    packaging {
-        jniLibs.useLegacyPackaging = true
     }
 
     compileOptions {
@@ -44,8 +36,5 @@ android {
 }
 
 dependencies {
-    implementation "androidx.core:core-ktx:1.13.1"
-    implementation "dev.rikka.shizuku:api:13.1.5"
-    implementation "dev.rikka.shizuku:provider:13.1.5"
-    implementation "dev.rikka.rikkashell:shizuku:1.6.1"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
 }

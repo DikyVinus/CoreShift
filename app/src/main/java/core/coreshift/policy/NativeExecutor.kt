@@ -24,11 +24,8 @@ object NativeExecutor {
                 else -> return
             }
 
-            if (backend == PrivilegeBackend.SHELL) {
-                AxerishEnv.apply(context, pb)
-            } else {
-                pb.environment()["PATH"] = "$binDir:${System.getenv("PATH")}"
-            }
+            // Apply hardened env for BOTH backends
+            AxerishEnv.apply(context, pb)
 
             pb.start().waitFor()
         } catch (_: Throwable) {}

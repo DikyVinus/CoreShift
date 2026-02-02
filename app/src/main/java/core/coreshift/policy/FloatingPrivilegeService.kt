@@ -43,37 +43,33 @@ class FloatingPrivilegeService : Service() {
 
     private fun requestPrivilege() {
         val binDir = File(filesDir, "bin").absolutePath
-        val path = "$binDir:${System.getenv("PATH")}"
 
         try {
-            ProcessBuilder("su", "-c", "id")
-                .apply { environment()["PATH"] = path }
-                .start()
-                .waitFor()
+            ProcessBuilder("su", "-c", "id").start().waitFor()
         } catch (_: Throwable) {
             try {
-                ProcessBuilder(
+                val pb = ProcessBuilder(
                     "$binDir/axerish",
                     "-c",
                     "\"whoami\""
-                ).apply {
-                    environment()["PATH"] = path
-                }.start().waitFor()
+                )
+                AxerishEnv.apply(this, pb)
+                pb.start().waitFor()
             } catch (_: Throwable) {
                 return
             }
         }
 
-        if (PrivilegeResolver.resolve(this) != PrivilegeBackend.NONE) {
+        val backend = PrivilegeResolver.resolve(this)
+        if (backend != PrivilegeBackend.NONE) {
+            DiscoveryController.runOnce(this, backend)
             wm.removeView(button)
             stopSelf()
         }
     }
 
     override fun onDestroy() {
-        try {
-            wm.removeView(button)
-        } catch (_: Throwable) {}
+        try { wm.removeView(button) } catch (_: Throwable) {}
         super.onDestroy()
     }
 

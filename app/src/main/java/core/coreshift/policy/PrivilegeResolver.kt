@@ -5,14 +5,17 @@ import java.io.File
 
 object PrivilegeResolver {
 
+    @Volatile
     private var resolved: PrivilegeBackend? = null
 
     fun resolve(context: Context): PrivilegeBackend {
-        resolved?.let { return it }
+        resolved?.let {
+            if (it != PrivilegeBackend.NONE) return it
+        }
 
         val binDir = File(context.filesDir, "bin").absolutePath
 
-        if (checkRoot(binDir)) {
+        if (checkRoot(context, binDir)) {
             resolved = PrivilegeBackend.ROOT
             return resolved!!
         }
@@ -22,18 +25,14 @@ object PrivilegeResolver {
             return resolved!!
         }
 
-        resolved = PrivilegeBackend.NONE
-        return resolved!!
+        return PrivilegeBackend.NONE
     }
 
-    private fun checkRoot(binDir: String): Boolean =
+    private fun checkRoot(context: Context, binDir: String): Boolean =
         try {
-            ProcessBuilder("su", "-c", "id")
-                .apply {
-                    environment()["PATH"] = "$binDir:${System.getenv("PATH")}"
-                }
-                .start()
-                .waitFor() == 0
+            val pb = ProcessBuilder("su", "-c", "id")
+            AxerishEnv.apply(context, pb)
+            pb.start().waitFor() == 0
         } catch (_: Throwable) {
             false
         }

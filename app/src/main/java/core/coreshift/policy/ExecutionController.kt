@@ -1,15 +1,19 @@
 package core.coreshift.policy
 
 import android.content.Context
-import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 
 object ExecutionController {
 
     private val executor = Executors.newSingleThreadExecutor()
+    private val lastPkg = AtomicReference<String?>(null)
 
     fun onForegroundChanged(context: Context, pkg: String) {
         executor.execute {
+            val prev = lastPkg.getAndSet(pkg)
+            if (pkg == prev) return@execute
+
             if (!EligibilityFilter.isEligible(context, pkg)) return@execute
 
             val backend = PrivilegeResolver.resolve(context)

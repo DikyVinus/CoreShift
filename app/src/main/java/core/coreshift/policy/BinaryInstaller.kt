@@ -13,6 +13,11 @@ object BinaryInstaller {
 
         if (!binDir.exists()) binDir.mkdirs()
 
+        // Enforce 0700 on bin dir
+        binDir.setReadable(true, true)
+        binDir.setWritable(true, true)
+        binDir.setExecutable(true, true)
+
         installAssets(context, abi, binDir)
         installNativeLibs(context, binDir)
     }
@@ -43,13 +48,11 @@ object BinaryInstaller {
 
             when {
                 name.endsWith(".dex") -> {
-                    // Android 14+ requirement: dex MUST NOT be writable
                     out.setReadable(true, true)
                     out.setExecutable(false, true)
                     out.setWritable(false, true)
                 }
                 else -> {
-                    // Executables
                     out.setReadable(true, true)
                     out.setExecutable(true, true)
                     out.setWritable(false, true)

@@ -14,7 +14,7 @@ object PrivilegeResolver {
         synchronized(this) {
             resolved?.let { return it }
 
-            if (checkRoot(context)) {
+            if (checkRoot()) {
                 resolved = PrivilegeBackend.ROOT
                 PolicyLogger.log(context, "Privilege resolved: ROOT")
                 return resolved!!
@@ -31,11 +31,11 @@ object PrivilegeResolver {
         }
     }
 
-    private fun checkRoot(context: Context): Boolean =
+    private fun checkRoot(): Boolean =
         try {
-            val pb = ProcessBuilder("su", "-c", "id")
-            AxerishEnv.apply(context, pb)
-            pb.start().waitFor() == 0
+            ProcessBuilder("su", "-c", "id")
+                .start()
+                .waitFor() == 0
         } catch (_: Throwable) {
             false
         }

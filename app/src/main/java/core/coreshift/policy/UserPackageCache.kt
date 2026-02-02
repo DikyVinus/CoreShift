@@ -47,8 +47,6 @@ object UserPackageCache {
 
                 if (backend == PrivilegeBackend.SHELL) {
                     AxerishEnv.apply(context, pb)
-                } else {
-                    pb.environment()["PATH"] = "$binDir:${System.getenv("PATH")}"
                 }
 
                 val proc = pb.start()

@@ -13,7 +13,7 @@ object BinaryInstaller {
 
         if (!binDir.exists()) binDir.mkdirs()
 
-        // Enforce 0700 on bin dir
+        // Always re-enforce permissions
         binDir.setReadable(true, true)
         binDir.setWritable(true, true)
         binDir.setExecutable(true, true)
@@ -53,17 +53,14 @@ object BinaryInstaller {
                 }
             }
 
-            when {
-                name.endsWith(".dex") -> {
-                    out.setReadable(true, true)
-                    out.setExecutable(false, true)
-                    out.setWritable(false, true)
-                }
-                else -> {
-                    out.setReadable(true, true)
-                    out.setExecutable(true, true)
-                    out.setWritable(false, true)
-                }
+            if (name.endsWith(".dex")) {
+                out.setReadable(true, true)
+                out.setExecutable(false, true)
+                out.setWritable(false, true)
+            } else {
+                out.setReadable(true, true)
+                out.setExecutable(true, true)
+                out.setWritable(false, true)
             }
         }
     }
@@ -86,5 +83,35 @@ object BinaryInstaller {
             out.setExecutable(true, true)
             out.setWritable(false, true)
         }
+    }
+}
+
+object NativeExecutor {
+
+    fun exec(context: Context, backend: PrivilegeBackend, binary: String) {
+        val binDir = File(context.filesDir, "bin").absolutePath
+        val cmd = "$binDir/$binary"
+
+        try {
+            val pb = when (backend) {
+                PrivilegeBackend.ROOT ->
+                    ProcessBuilder("su", "-c", cmd).also {
+                        RootEnv.apply(context, it)
+                    }
+
+                PrivilegeBackend.SHELL ->
+                    ProcessBuilder(
+                        "$binDir/axerish",
+                        "-c",
+                        "\"$cmd\""
+                    ).also {
+                        AxerishEnv.apply(context, it)
+                    }
+
+                else -> return
+            }
+
+            pb.start().waitFor()
+        } catch (_: Throwable) {}
     }
 }

@@ -13,11 +13,10 @@ object DiscoveryController {
         if (prefs.getBoolean(KEY_DONE, false)) return
 
         val binDir = File(context.filesDir, "bin").absolutePath
-        val path = "$binDir:${System.getenv("PATH")}"
         val cmd = "$binDir/coreshift_discovery"
 
         try {
-            when (backend) {
+            val pb = when (backend) {
                 PrivilegeBackend.ROOT ->
                     ProcessBuilder("su", "-c", cmd)
 
@@ -26,13 +25,14 @@ object DiscoveryController {
                         "$binDir/axerish",
                         "-c",
                         "\"$cmd\""
-                    )
+                    ).also {
+                        AxerishEnv.apply(context, it)
+                    }
 
                 else -> return
-            }.apply {
-                environment()["PATH"] = path
-            }.start().waitFor()
+            }
 
+            pb.start().waitFor()
             prefs.edit().putBoolean(KEY_DONE, true).apply()
         } catch (_: Throwable) {}
     }

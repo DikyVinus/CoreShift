@@ -9,9 +9,7 @@ object PrivilegeResolver {
     private var resolved: PrivilegeBackend? = null
 
     fun resolve(context: Context): PrivilegeBackend {
-        resolved?.let {
-            if (it != PrivilegeBackend.NONE) return it
-        }
+        resolved?.let { return it }
 
         val binDir = File(context.filesDir, "bin").absolutePath
 
@@ -27,8 +25,7 @@ object PrivilegeResolver {
             return resolved!!
         }
 
-        resolved = PrivilegeBackend.NONE
-        return resolved!!
+        return PrivilegeBackend.NONE
     }
 
     private fun checkRoot(context: Context): Boolean =

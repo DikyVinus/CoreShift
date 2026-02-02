@@ -11,7 +11,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url "https://api.github.com/repos/RikkaApps/RikkaMaven/raw/main" }
+        maven {
+            url "https://api.github.com/repos/RikkaApps/RikkaMaven/raw/main"
+        }
     }
 }
 

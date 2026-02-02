@@ -38,10 +38,17 @@ object BinaryInstaller {
 
         for (name in files) {
             val out = File(binDir, name)
-            if (out.exists()) continue
+
+            val needsInstall =
+                !out.exists() ||
+                !out.canRead() ||
+                (name.endsWith(".dex") && out.canWrite()) ||
+                (!name.endsWith(".dex") && !out.canExecute())
+
+            if (!needsInstall) continue
 
             am.open("$assetPath/$name").use { input ->
-                FileOutputStream(out).use { output ->
+                FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
                 }
             }

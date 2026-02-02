@@ -10,16 +10,18 @@ object AxerishEnv {
         val binDir = File(context.filesDir, "bin").absolutePath
         val env = pb.environment()
 
-        // Required for app_process
+        // Required runtime anchors
         env["ANDROID_ROOT"] = "/system"
         env["ANDROID_DATA"] = "/data"
         env["ANDROID_RUNTIME_ROOT"] = "/apex/com.android.runtime"
 
-        // CRITICAL: never inherit app CLASSPATH
+        // CRITICAL: strip all dex/classpath inheritance
         env.remove("CLASSPATH")
+        env.remove("BOOTCLASSPATH")
+        env.remove("SYSTEMSERVERCLASSPATH")
+        env.remove("DEX_PATH")
 
         val is64 = Build.SUPPORTED_ABIS.any { it.contains("64") }
-
         val runtimeLib = if (is64)
             "/apex/com.android.runtime/lib64:/apex/com.android.art/lib64"
         else

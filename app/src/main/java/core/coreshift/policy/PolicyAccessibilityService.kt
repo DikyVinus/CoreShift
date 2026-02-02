@@ -77,21 +77,19 @@ class PolicyAccessibilityService : AccessibilityService() {
 
     /* ================= privilege detection ================= */
 
-    private fun hasRoot(): Boolean {
-        return try {
+    private fun hasRoot(): Boolean =
+        try {
             Runtime.getRuntime()
                 .exec(arrayOf("su", "-c", "true"))
                 .waitFor() == 0
         } catch (_: Throwable) {
             false
         }
-    }
 
-    private fun hasShizuku(): Boolean {
-        return Shizuku.pingBinder() &&
+    private fun hasShizuku(): Boolean =
+        Shizuku.pingBinder() &&
             Shizuku.checkSelfPermission() ==
             PackageManager.PERMISSION_GRANTED
-    }
 
     private fun requestShizukuOnce() {
         if (!Shizuku.pingBinder()) return
@@ -109,6 +107,7 @@ class PolicyAccessibilityService : AccessibilityService() {
         try {
             val p = Runtime.getRuntime()
                 .exec(arrayOf("pm", "list", "packages", "-3"))
+
             p.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach {
                     if (it.startsWith("package:")) {
@@ -123,9 +122,8 @@ class PolicyAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isRealForeground(pkg: String): Boolean {
-        return pkg in userPkgs || pkg in EXCEPTION_PKGS
-    }
+    private fun isRealForeground(pkg: String): Boolean =
+        pkg in userPkgs || pkg in EXCEPTION_PKGS
 
     /* ================= runtime ================= */
 
@@ -139,8 +137,7 @@ class PolicyAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (!privileged) return
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
-            return
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val pkg = event.packageName?.toString() ?: return
         if (pkg == lastForegroundPkg) return
@@ -153,8 +150,7 @@ class PolicyAccessibilityService : AccessibilityService() {
         if (execCount % 40 == 0) {
             Log.i(
                 TAG,
-                "coreshift_exec x$execCount " +
-                    "(source=$privilegeSource, pkg=$pkg)"
+                "coreshift_exec x$execCount (source=$privilegeSource, pkg=$pkg)"
             )
         }
     }
@@ -204,14 +200,23 @@ class PolicyAccessibilityService : AccessibilityService() {
         return out
     }
 
+    /* ================= execution ================= */
+
     private fun execBinary(name: String) {
         val bin = File(applicationInfo.dataDir + "/bin", name)
+
         try {
-            if (privilegeSource == "root") {
-                Runtime.getRuntime()
-                    .exec(arrayOf("su", "-c", bin.absolutePath))
-            } else {
-                Runtime.getRuntime().exec(bin.absolutePath)
+            when (privilegeSource) {
+                "root" -> {
+                    Runtime.getRuntime()
+                        .exec(arrayOf("su", "-c", bin.absolutePath))
+                }
+                "shizuku" -> {
+                    Exec.run(bin)
+                }
+                else -> {
+                    Runtime.getRuntime().exec(bin.absolutePath)
+                }
             }
         } catch (_: Throwable) {}
     }

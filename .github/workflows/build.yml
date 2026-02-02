@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   build:
@@ -24,7 +23,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          submodules: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -36,44 +34,46 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components
-        shell: bash --noprofile --norc -euo pipefail
+      - name: Install required SDK packages
+        shell: bash
         run: |
+          set -euo pipefail
           sdkmanager --install \
-            "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
       - name: Verify Gradle wrapper
-        shell: bash --noprofile --norc -euo pipefail
+        shell: bash
         run: |
+          set -euo pipefail
+          chmod 0755 gradlew
           ./gradlew --version
 
-      - name: Grant Gradle wrapper permission
-        run: chmod 0755 gradlew
-
-      - name: Build Debug APK
-        shell: bash --noprofile --norc -euo pipefail
+      - name: Build Release APK
+        shell: bash
         run: |
-          ./gradlew assembleDebug --stacktrace
+          set -euo pipefail
+          ./gradlew assembleRelease --stacktrace
 
       - name: Validate APK output
-        shell: bash --noprofile --norc -euo pipefail
+        shell: bash
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           ls -lh "$APK"
 
       - name: Collect APK
-        shell: bash --noprofile --norc -euo pipefail
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/CoreShift.apk
+          cp app/build/outputs/apk/release/app-release.apk out/CoreShift-release-unsigned.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CoreShift-debug-apk
+          name: CoreShift.apk
           path: out/CoreShift.apk
           if-no-files-found: error
           retention-days: 7

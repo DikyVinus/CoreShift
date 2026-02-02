@@ -20,8 +20,9 @@ android {
             debuggable true
         }
         release {
-            minifyEnabled false
             debuggable false
+            minifyEnabled false
+            shrinkResources false
         }
     }
 
@@ -34,11 +35,14 @@ android {
         jvmTarget = "17"
     }
 
-    packagingOptions {
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         pickFirst "lib/**/libcoreshift.so"
     }
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
+    // Kotlin stdlib provided by AGP
 }

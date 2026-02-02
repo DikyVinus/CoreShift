@@ -35,17 +35,18 @@ jobs:
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Build Release APK
+      - name: Build Release APK (Gradle Wrapper)
         shell: bash
         run: |
           set -euo pipefail
+          ./gradlew --version
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Validate APK output
         shell: bash
         run: |
           set -euo pipefail
-          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           ls -lh "$APK"
 
@@ -54,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release-unsigned.apk \
+          cp app/build/outputs/apk/release/app-release.apk \
              out/CoreShift-release-unsigned.apk
 
       - name: Upload APK artifact

@@ -19,13 +19,16 @@ object NativeExecutor {
                         "$binDir/axerish",
                         "-c",
                         "\"$cmd\""
-                    )
+                    ).also {
+                        AxerishEnv.apply(context, it)
+                    }
 
                 else -> return
             }
 
-            AxerishEnv.apply(context, pb)
             pb.start().waitFor()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+            // swallow permanently
+        }
     }
 }

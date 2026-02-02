@@ -46,7 +46,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod 0755 gradlew
+          ls -l
+          chmod 0755 ./gradlew
           ./gradlew --version
 
       - name: Build Release APK

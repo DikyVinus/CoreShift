@@ -38,8 +38,8 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += ["lib/**/libcoreshift.so"]
         }
-        pickFirst "lib/**/libcoreshift.so"
     }
 }
 

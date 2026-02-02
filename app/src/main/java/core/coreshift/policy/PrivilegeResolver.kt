@@ -15,20 +15,23 @@ object PrivilegeResolver {
 
         val binDir = File(context.filesDir, "bin").absolutePath
 
-        if (checkRoot(context, binDir)) {
+        if (checkRoot(context)) {
             resolved = PrivilegeBackend.ROOT
+            PolicyLogger.log(context, "Privilege resolved: ROOT")
             return resolved!!
         }
 
         if (checkShell(context, binDir)) {
             resolved = PrivilegeBackend.SHELL
+            PolicyLogger.log(context, "Privilege resolved: SHELL(axerish)")
             return resolved!!
         }
 
-        return PrivilegeBackend.NONE
+        resolved = PrivilegeBackend.NONE
+        return resolved!!
     }
 
-    private fun checkRoot(context: Context, binDir: String): Boolean =
+    private fun checkRoot(context: Context): Boolean =
         try {
             val pb = ProcessBuilder("su", "-c", "id")
             AxerishEnv.apply(context, pb)

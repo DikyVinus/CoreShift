@@ -12,20 +12,21 @@ object NativeExecutor {
         try {
             val pb = when (backend) {
                 PrivilegeBackend.ROOT ->
-                    ProcessBuilder("su", "-c", cmd)
+                    ProcessBuilder("su", "-c", cmd).apply {
+                        environment()["PATH"] = "$binDir:${System.getenv("PATH")}"
+                    }
 
                 PrivilegeBackend.SHELL ->
                     ProcessBuilder(
                         "$binDir/axerish",
                         "-c",
                         "\"$cmd\""
-                    )
+                    ).apply {
+                        AxerishEnv.apply(context, this)
+                    }
 
                 else -> return
             }
-
-            // Apply hardened env for BOTH backends
-            AxerishEnv.apply(context, pb)
 
             pb.start().waitFor()
         } catch (_: Throwable) {}

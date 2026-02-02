@@ -19,6 +19,8 @@ object ExecutionController {
             val backend = PrivilegeResolver.resolve(context)
             if (backend == PrivilegeBackend.NONE) return@execute
 
+            PolicyLogger.log(context, "EXEC foreground=$pkg backend=$backend")
+
             NativeExecutor.exec(context, backend, "coreshift_exec")
             RateLimiter.recordExec(context)
 

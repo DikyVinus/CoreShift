@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.IBinder
+import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Button
@@ -11,18 +12,26 @@ import java.io.File
 
 class FloatingPrivilegeService : Service() {
 
-    private lateinit var wm: WindowManager
-    private lateinit var button: Button
+    private var wm: WindowManager? = null
+    private var button: Button? = null
 
     override fun onCreate() {
         super.onCreate()
 
+        // If privilege already resolved, do nothing
         if (PrivilegeResolver.resolve(this) != PrivilegeBackend.NONE) {
             stopSelf()
             return
         }
 
+        // HARD GATE: overlay permission
+        if (!Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return
+        }
+
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+
         button = Button(this).apply {
             text = "Grant CoreShift Privilege"
             setOnClickListener { requestPrivilege() }
@@ -38,7 +47,7 @@ class FloatingPrivilegeService : Service() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
         }
 
-        wm.addView(button, params)
+        wm!!.addView(button, params)
     }
 
     private fun requestPrivilege() {
@@ -63,13 +72,19 @@ class FloatingPrivilegeService : Service() {
         val backend = PrivilegeResolver.resolve(this)
         if (backend != PrivilegeBackend.NONE) {
             DiscoveryController.runOnce(this, backend)
-            wm.removeView(button)
-            stopSelf()
+            cleanup()
         }
     }
 
+    private fun cleanup() {
+        try {
+            button?.let { wm?.removeView(it) }
+        } catch (_: Throwable) {}
+        stopSelf()
+    }
+
     override fun onDestroy() {
-        try { wm.removeView(button) } catch (_: Throwable) {}
+        cleanup()
         super.onDestroy()
     }
 

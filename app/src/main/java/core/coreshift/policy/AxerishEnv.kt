@@ -1,6 +1,7 @@
 package core.coreshift.policy
 
 import android.content.Context
+import android.os.Build
 import java.io.File
 
 object AxerishEnv {
@@ -9,17 +10,22 @@ object AxerishEnv {
         val binDir = File(context.filesDir, "bin").absolutePath
         val env = pb.environment()
 
-        // Android runtime roots (MANDATORY for app_process)
-        env["ANDROID_DATA"] = "/data"
+        // Required for app_process
         env["ANDROID_ROOT"] = "/system"
+        env["ANDROID_DATA"] = "/data"
+        env["ANDROID_RUNTIME_ROOT"] = "/apex/com.android.runtime"
 
-        // Remove inherited app CLASSPATH (Android 14+ requirement)
+        // CRITICAL: never inherit app CLASSPATH
         env.remove("CLASSPATH")
 
-        // Ensure our binaries win
-        env["PATH"] = "$binDir:${System.getenv("PATH")}"
+        val is64 = Build.SUPPORTED_ABIS.any { it.contains("64") }
 
-        // Native libs if axerish ships any (safe even if unused)
-        env["LD_LIBRARY_PATH"] = binDir
+        val runtimeLib = if (is64)
+            "/apex/com.android.runtime/lib64:/apex/com.android.art/lib64"
+        else
+            "/apex/com.android.runtime/lib:/apex/com.android.art/lib"
+
+        env["LD_LIBRARY_PATH"] = "$runtimeLib:$binDir"
+        env["PATH"] = "$binDir:${System.getenv("PATH")}"
     }
 }

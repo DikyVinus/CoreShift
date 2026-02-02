@@ -2,11 +2,27 @@ package core.coreshift.policy
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import dev.rikka.shizuku.Shizuku
 import java.io.File
 
 class PolicyAccessibilityService : AccessibilityService() {
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var privileged = false
+    private var privilegeSource = "none"
+
+    private var discoveryDone = false
+    private var lastForegroundPkg: String? = null
+    private var execCount = 0
+
+    private val DEMOTE_INTERVAL_MS = 90L * 60L * 1000L // 90 minutes
+    private val TAG = "CoreShift"
 
     override fun onServiceConnected() {
         System.loadLibrary("coreshift")
@@ -15,29 +31,94 @@ class PolicyAccessibilityService : AccessibilityService() {
         installExec("coreshift_exec")
         installExec("coreshift_demote")
 
-        if (Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission()
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        privileged = when {
+            hasRoot() -> {
+                privilegeSource = "root"
+                true
+            }
+            hasShizuku() -> {
+                privilegeSource = "shizuku"
+                true
+            }
+            else -> false
+        }
 
-            val i = Intent(this, ShizukuPermissionActivity::class.java)
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(i)
+        if (!privileged) {
+            requestShizukuOnce()
+            return
+        }
+
+        Log.i(TAG, "Privilege latched via $privilegeSource")
+        startPrivilegedRuntime()
+    }
+
+    private fun hasRoot(): Boolean {
+        return try {
+            Runtime.getRuntime()
+                .exec(arrayOf("su", "-c", "true"))
+                .waitFor() == 0
+        } catch (_: Throwable) {
+            false
         }
     }
 
+    private fun hasShizuku(): Boolean {
+        return Shizuku.pingBinder() &&
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestShizukuOnce() {
+        if (!Shizuku.pingBinder()) return
+        if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) return
+
+        val i = Intent(this, ShizukuPermissionActivity::class.java)
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(i)
+    }
+
+    private fun startPrivilegedRuntime() {
+        if (!discoveryDone) {
+            execBinary("coreshift_discovery")
+            discoveryDone = true
+        }
+        scheduleDemote()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (!privileged) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg == lastForegroundPkg) return
+
+        lastForegroundPkg = pkg
+        execBinary("coreshift_exec")
+
+        execCount++
+        if (execCount % 40 == 0) {
+            Log.i(
+                TAG,
+                "coreshift_exec x$execCount (source=$privilegeSource, lastPkg=$pkg)"
+            )
+        }
     }
 
     override fun onInterrupt() {}
 
-    private fun runtimeAbi(): String {
-        return if (applicationInfo.nativeLibraryDir.contains("arm64")) {
-            "arm64-v8a"
-        } else {
-            "armeabi-v7a"
-        }
+    private fun scheduleDemote() {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                if (privileged) {
+                    execBinary("coreshift_demote")
+                    handler.postDelayed(this, DEMOTE_INTERVAL_MS)
+                }
+            }
+        }, DEMOTE_INTERVAL_MS)
     }
+
+    private fun runtimeAbi(): String =
+        if (applicationInfo.nativeLibraryDir.contains("arm64")) "arm64-v8a"
+        else "armeabi-v7a"
 
     private fun installExec(name: String): File {
         val binDir = File(applicationInfo.dataDir, "bin")
@@ -50,7 +131,6 @@ class PolicyAccessibilityService : AccessibilityService() {
         if (out.exists() && out.canExecute()) return out
 
         val abi = runtimeAbi()
-
         assets.open("native/$abi/$name").use { input ->
             out.outputStream().use { output ->
                 input.copyTo(output)
@@ -60,5 +140,17 @@ class PolicyAccessibilityService : AccessibilityService() {
         out.setExecutable(true, false)
         out.setReadable(true, false)
         return out
+    }
+
+    private fun execBinary(name: String) {
+        val bin = File(applicationInfo.dataDir + "/bin", name)
+        try {
+            if (privilegeSource == "root") {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", bin.absolutePath))
+            } else {
+                Runtime.getRuntime().exec(bin.absolutePath)
+            }
+        } catch (_: Throwable) {
+        }
     }
 }

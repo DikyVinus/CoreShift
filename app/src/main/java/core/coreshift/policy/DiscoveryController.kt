@@ -34,6 +34,8 @@ object DiscoveryController {
 
             pb.start().waitFor()
             prefs.edit().putBoolean(KEY_DONE, true).apply()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+            // swallow permanently
+        }
     }
 }

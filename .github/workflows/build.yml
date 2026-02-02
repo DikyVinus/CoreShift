@@ -6,26 +6,16 @@ on:
   pull_request:
     branches: [ main ]
 
-# Least privilege
 permissions:
   contents: read
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
-    # Prevent runaway jobs
     timeout-minutes: 15
 
-    env:
-      GRADLE_OPTS: >
-        -Dorg.gradle.daemon=false
-        -Dorg.gradle.parallel=false
-        -Dorg.gradle.jvmargs="-Xmx2g -XX:+HeapDumpOnOutOfMemoryError"
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
@@ -39,7 +29,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform + build tools
+      - name: Install Android SDK components
         shell: bash
         run: |
           set -euo pipefail
@@ -49,41 +39,23 @@ jobs:
             "build-tools;34.0.0"
 
       - name: Verify Gradle wrapper
-        shell: bash
         run: |
-          set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --version
-          test -f gradle/wrapper/gradle-wrapper.jar
-          test -f gradle/wrapper/gradle-wrapper.properties
 
       - name: Build Release APK
-        shell: bash
         run: |
-          set -euo pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Validate APK output
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/apk/release/app-release.apk
-          test -f "$APK"
-          ls -lh "$APK"
-          sha256sum "$APK"
-
       - name: Collect APK
-        shell: bash
         run: |
-          set -euo pipefail
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk \
-            out/CoreShift-release-unsigned.apk
+             out/CoreShift-release-unsigned.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: CoreShift-release-unsigned
           path: out/CoreShift-release-unsigned.apk
-          if-no-files-found: error
           retention-days: 7

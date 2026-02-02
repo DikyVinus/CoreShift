@@ -12,57 +12,49 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Configure Android SDK env
+      - name: Install Android platform + build tools
         shell: bash
         run: |
-          set -e
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> "$GITHUB_ENV"
-
-      - name: Install SDK components
-        shell: bash
-        run: |
-          set -e
-          sdkmanager --licenses || true
+          set -euo pipefail
+          yes | sdkmanager --licenses
           sdkmanager \
-            "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
-
-      - name: Verify Gradle Wrapper
-        shell: bash
-        run: |
-          chmod +x ./gradlew
-          ./gradlew --version
 
       - name: Build Release APK
         shell: bash
         run: |
+          set -euo pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Validate APK output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$APK"
+          ls -lh "$APK"
 
       - name: Collect APK
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk \
+          cp app/build/outputs/apk/release/app-release-unsigned.apk \
              out/CoreShift-release-unsigned.apk
 
       - name: Upload APK artifact
@@ -70,4 +62,5 @@ jobs:
         with:
           name: CoreShift-release-unsigned
           path: out/CoreShift-release-unsigned.apk
+          if-no-files-found: error
           retention-days: 7

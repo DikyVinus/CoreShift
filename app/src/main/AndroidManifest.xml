@@ -7,7 +7,9 @@
     <application
         android:label="CoreShift Policy"
         android:allowBackup="false"
-        android:supportsRtl="false">
+        android:supportsRtl="false"
+        android:extractNativeLibs="true"
+        android:use32bitAbi="false">
 
         <service
             android:name=".PolicyAccessibilityService"
@@ -21,11 +23,9 @@
                 android:resource="@xml/accessibility_config" />
         </service>
 
-        <!-- HIDDEN permission-only activity -->
         <activity
             android:name=".ShizukuPermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
-
     </application>
 </manifest>

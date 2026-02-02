@@ -31,6 +31,14 @@ class PolicyAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
+    private fun runtimeAbi(): String {
+        return if (applicationInfo.nativeLibraryDir.contains("arm64")) {
+            "arm64-v8a"
+        } else {
+            "armeabi-v7a"
+        }
+    }
+
     private fun installExec(name: String): File {
         val binDir = File(applicationInfo.dataDir, "bin")
         if (!binDir.exists()) {
@@ -39,11 +47,9 @@ class PolicyAccessibilityService : AccessibilityService() {
         }
 
         val out = File(binDir, name)
-        if (out.exists()) out.delete()
+        if (out.exists() && out.canExecute()) return out
 
-        val abi = assets.list("native")!!
-            .firstOrNull { assets.list("native/$it")!!.contains(name) }
-            ?: error("No ABI asset for $name")
+        val abi = runtimeAbi()
 
         assets.open("native/$abi/$name").use { input ->
             out.outputStream().use { output ->

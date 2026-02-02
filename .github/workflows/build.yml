@@ -34,11 +34,20 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_SDK_ROOT }}/platforms
+            ${{ env.ANDROID_SDK_ROOT }}/build-tools
+            ${{ env.ANDROID_SDK_ROOT }}/platform-tools
+          key: android-sdk-34
+
       - name: Install required SDK packages
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install \
+          yes | sdkmanager --install \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
@@ -46,7 +55,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ls -l
           chmod 0755 ./gradlew
           ./gradlew --version
 
@@ -54,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Validate APK output
         shell: bash
@@ -69,12 +77,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/CoreShift-release-unsigned.apk
+          cp app/build/outputs/apk/release/app-release.apk \
+             out/CoreShift-release-unsigned.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CoreShift.apk
-          path: out/CoreShift.apk
+          name: CoreShift-release-unsigned
+          path: out/CoreShift-release-unsigned.apk
           if-no-files-found: error
           retention-days: 7

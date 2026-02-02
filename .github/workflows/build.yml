@@ -1,89 +1,75 @@
 name: Build CoreShift
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+push:
+branches: [ main ]
+pull_request:
+branches: [ main ]
 
 permissions:
-  contents: read
+contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+build:
+runs-on: ubuntu-22.04
 
-    env:
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      GRADLE_USER_HOME: ~/.gradle
-      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
+steps:          
+  - name: Checkout source          
+    uses: actions/checkout@v4          
+      
+  - name: Set up JDK 17          
+    uses: actions/setup-java@v4          
+    with:          
+      distribution: temurin          
+      java-version: 17          
+      
+  - name: Set up Android SDK          
+    uses: android-actions/setup-android@v3          
+      
+  - name: Install Android platform + build tools          
+    shell: bash          
+    run: |          
+      set -euo pipefail          
+      yes | sdkmanager --licenses          
+      sdkmanager \          
+        "platforms;android-34" \          
+        "build-tools;34.0.0"          
+      
+  - name: Install Gradle          
+    shell: bash          
+    run: |          
+      set -euo pipefail          
+      sudo apt-get update          
+      sudo apt-get install -y gradle          
+      gradle --version          
+      
+  - name: Build Release APK          
+    shell: bash          
+    run: |          
+      set -euo pipefail          
+      gradle assembleRelease --no-daemon --stacktrace          
+      
+  - name: Validate APK output          
+    shell: bash          
+    run: |          
+      set -euo pipefail          
+      APK=app/build/outputs/apk/release/app-release.apk          
+      test -f "$APK"          
+      ls -lh "$APK"          
+      
+  - name: Collect APK          
+    shell: bash          
+    run: |          
+      set -euo pipefail          
+      mkdir -p out          
+      cp app/build/outputs/apk/release/app-release.apk \          
+        out/CoreShift-release-unsigned.apk          
+      
+  - name: Upload APK artifact          
+    uses: actions/upload-artifact@v4          
+    with:          
+      name: CoreShift-release-unsigned          
+      path: out/CoreShift-release-unsigned.apk          
+      if-no-files-found: error          
+      retention-days: 7
 
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Cache Android SDK packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ANDROID_SDK_ROOT }}/platforms
-            ${{ env.ANDROID_SDK_ROOT }}/build-tools
-            ${{ env.ANDROID_SDK_ROOT }}/platform-tools
-          key: android-sdk-34
-
-      - name: Install required SDK packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          yes | sdkmanager --install \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
-
-      - name: Verify Gradle wrapper
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod 0755 ./gradlew
-          ./gradlew --version
-
-      - name: Build Release APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew assembleRelease --no-daemon --stacktrace
-
-      - name: Validate APK output
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/apk/release/app-release.apk
-          test -f "$APK"
-          ls -lh "$APK"
-
-      - name: Collect APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk \
-             out/CoreShift-release-unsigned.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: CoreShift-release-unsigned
-          path: out/CoreShift-release-unsigned.apk
-          if-no-files-found: error
-          retention-days: 7

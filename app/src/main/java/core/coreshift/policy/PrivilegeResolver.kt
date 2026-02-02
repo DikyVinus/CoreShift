@@ -11,21 +11,24 @@ object PrivilegeResolver {
     fun resolve(context: Context): PrivilegeBackend {
         resolved?.let { return it }
 
-        val binDir = File(context.filesDir, "bin").absolutePath
+        synchronized(this) {
+            resolved?.let { return it }
 
-        if (checkRoot(context)) {
-            resolved = PrivilegeBackend.ROOT
-            PolicyLogger.log(context, "Privilege resolved: ROOT")
+            if (checkRoot(context)) {
+                resolved = PrivilegeBackend.ROOT
+                PolicyLogger.log(context, "Privilege resolved: ROOT")
+                return resolved!!
+            }
+
+            if (checkShell(context)) {
+                resolved = PrivilegeBackend.SHELL
+                PolicyLogger.log(context, "Privilege resolved: SHELL(axerish)")
+                return resolved!!
+            }
+
+            resolved = PrivilegeBackend.NONE
             return resolved!!
         }
-
-        if (checkShell(context, binDir)) {
-            resolved = PrivilegeBackend.SHELL
-            PolicyLogger.log(context, "Privilege resolved: SHELL(axerish)")
-            return resolved!!
-        }
-
-        return PrivilegeBackend.NONE
     }
 
     private fun checkRoot(context: Context): Boolean =
@@ -37,8 +40,9 @@ object PrivilegeResolver {
             false
         }
 
-    private fun checkShell(context: Context, binDir: String): Boolean =
+    private fun checkShell(context: Context): Boolean =
         try {
+            val binDir = File(context.filesDir, "bin").absolutePath
             val pb = ProcessBuilder(
                 "$binDir/axerish",
                 "-c",

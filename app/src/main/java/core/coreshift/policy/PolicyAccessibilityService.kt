@@ -12,17 +12,38 @@ import java.io.File
 
 class PolicyAccessibilityService : AccessibilityService() {
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val TAG = "CoreShift"
+
+    /* ================= privilege ================= */
 
     private var privileged = false
     private var privilegeSource = "none"
+
+    /* ================= state ================= */
 
     private var discoveryDone = false
     private var lastForegroundPkg: String? = null
     private var execCount = 0
 
-    private val DEMOTE_INTERVAL_MS = 90L * 60L * 1000L // 90 minutes
-    private val TAG = "CoreShift"
+    /* ================= timing ================= */
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val DEMOTE_INTERVAL_MS = 90L * 60L * 1000L
+
+    /* ================= package model ================= */
+
+    private val userPkgs = HashSet<String>()
+
+    private val EXCEPTION_PKGS = setOf(
+        "com.android.settings",
+        "com.android.launcher",
+        "com.android.launcher3",
+        "com.google.android.googlequicksearchbox",
+        "com.android.chrome",
+        "com.android.vending"
+    )
+
+    /* ================================================= */
 
     override fun onServiceConnected() {
         System.loadLibrary("coreshift")
@@ -49,8 +70,12 @@ class PolicyAccessibilityService : AccessibilityService() {
         }
 
         Log.i(TAG, "Privilege latched via $privilegeSource")
+
+        cacheUserPackages()
         startPrivilegedRuntime()
     }
+
+    /* ================= privilege detection ================= */
 
     private fun hasRoot(): Boolean {
         return try {
@@ -64,17 +89,45 @@ class PolicyAccessibilityService : AccessibilityService() {
 
     private fun hasShizuku(): Boolean {
         return Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            Shizuku.checkSelfPermission() ==
+            PackageManager.PERMISSION_GRANTED
     }
 
     private fun requestShizukuOnce() {
         if (!Shizuku.pingBinder()) return
-        if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) return
+        if (Shizuku.checkSelfPermission() ==
+            PackageManager.PERMISSION_GRANTED) return
 
         val i = Intent(this, ShizukuPermissionActivity::class.java)
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(i)
     }
+
+    /* ================= package model ================= */
+
+    private fun cacheUserPackages() {
+        try {
+            val p = Runtime.getRuntime()
+                .exec(arrayOf("pm", "list", "packages", "-3"))
+            p.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach {
+                    if (it.startsWith("package:")) {
+                        userPkgs.add(it.substringAfter("package:"))
+                    }
+                }
+            }
+            p.waitFor()
+            Log.i(TAG, "Cached ${userPkgs.size} user packages")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to cache user packages", t)
+        }
+    }
+
+    private fun isRealForeground(pkg: String): Boolean {
+        return pkg in userPkgs || pkg in EXCEPTION_PKGS
+    }
+
+    /* ================= runtime ================= */
 
     private fun startPrivilegedRuntime() {
         if (!discoveryDone) {
@@ -86,10 +139,12 @@ class PolicyAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (!privileged) return
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+            return
 
         val pkg = event.packageName?.toString() ?: return
         if (pkg == lastForegroundPkg) return
+        if (!isRealForeground(pkg)) return
 
         lastForegroundPkg = pkg
         execBinary("coreshift_exec")
@@ -98,12 +153,15 @@ class PolicyAccessibilityService : AccessibilityService() {
         if (execCount % 40 == 0) {
             Log.i(
                 TAG,
-                "coreshift_exec x$execCount (source=$privilegeSource, lastPkg=$pkg)"
+                "coreshift_exec x$execCount " +
+                    "(source=$privilegeSource, pkg=$pkg)"
             )
         }
     }
 
     override fun onInterrupt() {}
+
+    /* ================= demotion ================= */
 
     private fun scheduleDemote() {
         handler.postDelayed(object : Runnable {
@@ -116,9 +174,13 @@ class PolicyAccessibilityService : AccessibilityService() {
         }, DEMOTE_INTERVAL_MS)
     }
 
+    /* ================= exec install ================= */
+
     private fun runtimeAbi(): String =
-        if (applicationInfo.nativeLibraryDir.contains("arm64")) "arm64-v8a"
-        else "armeabi-v7a"
+        if (applicationInfo.nativeLibraryDir.contains("arm64"))
+            "arm64-v8a"
+        else
+            "armeabi-v7a"
 
     private fun installExec(name: String): File {
         val binDir = File(applicationInfo.dataDir, "bin")
@@ -146,11 +208,11 @@ class PolicyAccessibilityService : AccessibilityService() {
         val bin = File(applicationInfo.dataDir + "/bin", name)
         try {
             if (privilegeSource == "root") {
-                Runtime.getRuntime().exec(arrayOf("su", "-c", bin.absolutePath))
+                Runtime.getRuntime()
+                    .exec(arrayOf("su", "-c", bin.absolutePath))
             } else {
                 Runtime.getRuntime().exec(bin.absolutePath)
             }
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
     }
 }

@@ -52,14 +52,51 @@ jobs:
           set -euo pipefail
           APK=$(find app/build/outputs/apk/release -type f -name "*.apk" | head -n 1)
           test -n "$APK"
-          echo "APK found at: $APK"
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Generate debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          keytool -genkeypair \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Sign APK (debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner sign \
+            --ks ~/.android/debug.keystore \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            "$APK"
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner verify --verbose "$APK"
+
+      - name: Collect signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p out
-          cp "$APK" out/CoreShift-release-unsigned.apk
+          cp "$APK" out/CoreShift-release-debug-signed.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CoreShift-release-unsigned
-          path: out/CoreShift-release-unsigned.apk
+          name: CoreShift-release-debug-signed
+          path: out/CoreShift-release-debug-signed.apk
           if-no-files-found: error
           retention-days: 7

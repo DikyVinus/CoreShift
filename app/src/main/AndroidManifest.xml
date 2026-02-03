@@ -19,7 +19,7 @@
         </activity>
 
         <service
-            android:name=".FloatingPrivilegeService"
+            android:name=".OverlayService"
             android:exported="false"/>
 
         <service

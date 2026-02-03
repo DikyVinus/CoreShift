@@ -46,13 +46,15 @@ jobs:
           set -euo pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Collect APK
+      - name: Locate APK
         shell: bash
         run: |
           set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -type f -name "*.apk" | head -n 1)
+          test -n "$APK"
+          echo "APK found at: $APK"
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk \
-             out/CoreShift-release-unsigned.apk
+          cp "$APK" out/CoreShift-release-unsigned.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

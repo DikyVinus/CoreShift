@@ -19,13 +19,13 @@ android {
         release {
             def ksPath = System.getenv("RELEASE_KEYSTORE_PATH")
             def ksPass = System.getenv("RELEASE_KEYSTORE_PASSWORD")
-            def keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            def keyAliasEnv = System.getenv("RELEASE_KEY_ALIAS")
             def keyPass = System.getenv("RELEASE_KEY_PASSWORD")
 
-            if (ksPath && ksPass && keyAlias && keyPass) {
+            if (ksPath && ksPass && keyAliasEnv && keyPass) {
                 storeFile file(ksPath)
                 storePassword ksPass
-                keyAlias keyAlias
+                keyAlias keyAliasEnv
                 keyPassword keyPass
             }
         }
@@ -40,10 +40,7 @@ android {
             debuggable false
             minifyEnabled false
             shrinkResources false
-
-            if (signingConfigs.release.storeFile != null) {
-                signingConfig signingConfigs.release
-            }
+            signingConfig signingConfigs.release
         }
     }
 
@@ -65,5 +62,4 @@ android {
 }
 
 dependencies {
-    // Kotlin stdlib provided by AGP
 }

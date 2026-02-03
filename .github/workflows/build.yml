@@ -31,19 +31,20 @@ jobs:
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Restore keystore (optional)
+      - name: Restore keystore
         shell: bash
         env:
           RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
         run: |
           set -e
-          if [ -n "$RELEASE_KEYSTORE_B64" ]; then
-            echo "$RELEASE_KEYSTORE_B64" | base64 --decode > release.keystore
-            echo "RELEASE_KEYSTORE_PATH=$PWD/release.keystore" >> "$GITHUB_ENV"
-            echo "Keystore restored"
-          else
-            echo "No keystore provided, building unsigned APK"
+          if [ -z "$RELEASE_KEYSTORE_B64" ]; then
+            echo "No keystore provided"
+            exit 0
           fi
+
+          echo "$RELEASE_KEYSTORE_B64" | base64 --decode > release.keystore
+          echo "RELEASE_KEYSTORE_PATH=$PWD/release.keystore" >> "$GITHUB_ENV"
+          ls -lh release.keystore
 
       - name: Build release APK
         shell: bash
@@ -61,8 +62,7 @@ jobs:
         run: |
           set -e
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk \
-             out/CoreShift-release.apk
+          cp app/build/outputs/apk/release/*.apk out/CoreShift-release.apk
 
       - uses: actions/upload-artifact@v4
         with:

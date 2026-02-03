@@ -6,7 +6,7 @@ import android.content.*
 import android.graphics.*
 import android.graphics.drawable.PaintDrawable
 import android.net.Uri
-import android.os.Bundle
+import android.os.*
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.*
@@ -14,6 +14,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+private const val FOREGROUND_STABLE_MS = 5_000L
 
 class CoreShiftApp : Application() {
     override fun onCreate() {
@@ -24,7 +26,7 @@ class CoreShiftApp : Application() {
         if (backend == PrivilegeBackend.NONE) {
             startService(Intent(this, OverlayService::class.java))
         } else {
-            Policy.discovery(this, backend)
+            PolicyEngine.discovery(this, backend)
         }
     }
 }
@@ -32,7 +34,6 @@ class CoreShiftApp : Application() {
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         if (!Settings.canDrawOverlays(this)) {
             startActivity(
                 Intent(
@@ -46,22 +47,45 @@ class MainActivity : Activity() {
 }
 
 class CoreShiftAccessibility : AccessibilityService() {
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var candidatePkg: String? = null
+    private var confirmRunnable: Runnable? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+
         val pkg = event.packageName?.toString() ?: return
-        Policy.onForeground(this, pkg)
+        if (pkg == candidatePkg) return
+
+        candidatePkg = pkg
+
+        confirmRunnable?.let { handler.removeCallbacks(it) }
+
+        val r = Runnable {
+            if (pkg == candidatePkg) {
+                PolicyEngine.onForeground(this, pkg)
+            }
+        }
+
+        confirmRunnable = r
+        handler.postDelayed(r, FOREGROUND_STABLE_MS)
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        confirmRunnable?.let { handler.removeCallbacks(it) }
+        confirmRunnable = null
+        candidatePkg = null
+    }
 }
 
 class OverlayService : Service() {
 
-    private lateinit var wm: WindowManager
-    private lateinit var icon: ImageView
-    private lateinit var params: WindowManager.LayoutParams
-    private lateinit var display: Display
-    private lateinit var viewConfig: ViewConfiguration
+    private var wm: WindowManager? = null
+    private var icon: ImageView? = null
+    private var params: WindowManager.LayoutParams? = null
+    private var metrics: WindowMetrics? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -75,8 +99,9 @@ class OverlayService : Service() {
         }
 
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        display = wm.defaultDisplay
-        viewConfig = ViewConfiguration.get(this)
+        if (Build.VERSION.SDK_INT >= 30) {
+            metrics = wm!!.currentWindowMetrics
+        }
 
         val sizePx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -87,17 +112,16 @@ class OverlayService : Service() {
         icon = ImageView(this).apply {
             setImageResource(R.drawable.ic_coreshift)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-
             background = PaintDrawable(Color.TRANSPARENT).apply {
                 setCornerRadius(sizePx.toFloat())
             }
-
             clipToOutline = true
             outlineProvider = ViewOutlineProvider.BACKGROUND
-
             isClickable = true
-            isFocusable = false
         }
+
+        val w = metrics?.bounds?.width() ?: resources.displayMetrics.widthPixels
+        val h = metrics?.bounds?.height() ?: resources.displayMetrics.heightPixels
 
         params = WindowManager.LayoutParams(
             sizePx,
@@ -107,81 +131,58 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = display.width - sizePx
-            y = display.height / 3
+            x = w - sizePx
+            y = h / 3
         }
 
-        icon.setOnTouchListener(DragTouchListener(sizePx))
-        wm.addView(icon, params)
+        icon!!.setOnTouchListener(DragTouchListener(sizePx, w, h))
+        wm!!.addView(icon, params)
     }
 
     private inner class DragTouchListener(
-        private val sizePx: Int
+        private val size: Int,
+        private val maxW: Int,
+        private val maxH: Int
     ) : View.OnTouchListener {
 
-        private var startX = 0
-        private var startY = 0
-        private var downX = 0f
-        private var downY = 0f
-
-        private val touchSlop = viewConfig.scaledTouchSlop
+        private var sx = 0
+        private var sy = 0
+        private var dx = 0f
+        private var dy = 0f
 
         override fun onTouch(v: View, e: MotionEvent): Boolean {
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    startX = params.x
-                    startY = params.y
-                    downX = e.rawX
-                    downY = e.rawY
+                    sx = params!!.x
+                    sy = params!!.y
+                    dx = e.rawX
+                    dy = e.rawY
                     return true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (e.rawX - downX).roundToInt()
-                    params.y = startY + (e.rawY - downY).roundToInt()
-
-                    clampY()
-                    wm.updateViewLayout(icon, params)
+                    val nx = sx + (e.rawX - dx).roundToInt()
+                    val ny = sy + (e.rawY - dy).roundToInt()
+                    if (abs(nx - params!!.x) < 1 && abs(ny - params!!.y) < 1) return true
+                    params!!.x = nx
+                    params!!.y = ny.coerceIn(0, maxH - size)
+                    wm!!.updateViewLayout(icon, params)
                     return true
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    val dx = abs(e.rawX - downX)
-                    val dy = abs(e.rawY - downY)
-
-                    if (dx < touchSlop && dy < touchSlop) {
-                        icon.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                        request()
-                    } else {
-                        snapToEdge()
-                    }
+                    snap()
+                    request()
                     return true
                 }
             }
             return false
         }
 
-        private fun clampY() {
-            val statusBar = getStatusBarHeight()
-            val maxY = display.height - sizePx
-
-            if (params.y < statusBar) params.y = statusBar
-            if (params.y > maxY) params.y = maxY
-        }
-
-        private fun snapToEdge() {
-            val center = display.width / 2
-            params.x = if (params.x + sizePx / 2 < center) {
-                0
-            } else {
-                display.width - sizePx
-            }
-            wm.updateViewLayout(icon, params)
-        }
-
-        private fun getStatusBarHeight(): Int {
-            val resId = resources.getIdentifier("status_bar_height", "dimen", "android")
-            return if (resId > 0) resources.getDimensionPixelSize(resId) else 0
+        private fun snap() {
+            params!!.x =
+                if (params!!.x + size / 2 < maxW / 2) 0 else maxW - size
+            wm!!.updateViewLayout(icon, params)
         }
     }
 
@@ -189,13 +190,18 @@ class OverlayService : Service() {
         Runtime.clearCache()
         val backend = Runtime.resolvePrivilege(this)
         if (backend != PrivilegeBackend.NONE) {
-            Policy.discovery(this, backend)
+            PolicyEngine.discovery(this, backend)
             cleanup()
         }
     }
 
     private fun cleanup() {
-        try { wm.removeView(icon) } catch (_: Throwable) {}
+        try {
+            icon?.let { wm?.removeViewImmediate(it) }
+        } catch (_: Throwable) {}
+        icon = null
+        params = null
+        wm = null
         stopSelf()
     }
 

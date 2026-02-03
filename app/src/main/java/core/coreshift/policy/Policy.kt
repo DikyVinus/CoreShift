@@ -3,12 +3,19 @@ package core.coreshift.policy
 import android.content.Context
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 private const val PREF_STATE = "coreshift_state"
-private const val PREF_RATE = "rate"
-private const val PREF_MAX_BYTES = 1024 * 1024 
+private const val PREF_RATE  = "rate"
+
+private const val EXECUTOR_IDLE_TIMEOUT_MS = 2 * 60 * 1000L
+private const val RATE_WINDOW_MS = 5 * 60 * 1000L
+private const val RATE_COOLDOWN_MS = 60 * 60 * 1000L
+private const val DEMOTE_THRESHOLD = 10
 
 private val FOREGROUND_WHITELIST = setOf(
     "com.android.launcher3",
@@ -17,52 +24,73 @@ private val FOREGROUND_WHITELIST = setOf(
     "com.android.chrome"
 )
 
-private fun prefsFile(context: Context, name: String): File =
-    File(context.applicationInfo.dataDir, "shared_prefs/$name.xml")
-
-private fun enforceSize(context: Context, name: String) {
-    val f = prefsFile(context, name)
-    if (f.exists() && f.length() > PREF_MAX_BYTES) {
-        context.getSharedPreferences(name, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .apply()
-    }
-}
-
 private fun mark(context: Context, key: String) {
-    enforceSize(context, PREF_STATE)
     context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
         .edit()
         .putLong(key, System.currentTimeMillis())
         .apply()
 }
 
-object Policy {
+object PolicyEngine {
 
-    private val exec = Executors.newSingleThreadExecutor()
     private val lastPkg = AtomicReference<String?>(null)
+    private val lastExecAt = AtomicLong(0)
+
+    @Volatile
+    private var executor: ScheduledExecutorService? = null
+
+    private val shutdownArmed = AtomicBoolean(false)
+
+    private fun ensureExecutor(): ScheduledExecutorService {
+        executor?.let { return it }
+        synchronized(this) {
+            executor?.let { return it }
+            executor = Executors.newSingleThreadScheduledExecutor()
+            shutdownArmed.set(false)
+            return executor!!
+        }
+    }
+
+    private fun armAutoShutdown() {
+        if (!shutdownArmed.compareAndSet(false, true)) return
+        executor?.schedule({
+            synchronized(this) {
+                executor?.shutdown()
+                executor = null
+                shutdownArmed.set(false)
+            }
+        }, EXECUTOR_IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    }
 
     fun onForeground(context: Context, pkg: String) {
+        val exec = ensureExecutor()
         exec.execute {
-            if (pkg == lastPkg.getAndSet(pkg)) return@execute
+            try {
+                if (pkg == lastPkg.getAndSet(pkg)) return@execute
 
-            if (!Eligibility.isUser(context, pkg) &&
-                !FOREGROUND_WHITELIST.contains(pkg)
-            ) return@execute
+                if (!Eligibility.isUser(context, pkg) &&
+                    !FOREGROUND_WHITELIST.contains(pkg)
+                ) return@execute
 
-            val backend = Runtime.resolvePrivilege(context)
-            if (backend == PrivilegeBackend.NONE) return@execute
+                val backend = Runtime.resolvePrivilege(context)
+                if (backend == PrivilegeBackend.NONE) return@execute
 
-            mark(context, "exec_at")
-            Rate.record(context)
+                val now = System.currentTimeMillis()
+                if (now - lastExecAt.get() < 1000) return@execute
+                lastExecAt.set(now)
 
-            Runtime.exec(context, backend, "coreshift_exec")
+                mark(context, "exec_at")
+                recordRate(context)
 
-            if (Rate.shouldDemote(context)) {
-                Runtime.exec(context, backend, "coreshift_demote")
-                mark(context, "demote_at")
-                Rate.mark(context)
+                Runtime.exec(context, backend, "coreshift_exec")
+
+                if (shouldDemote(context)) {
+                    Runtime.exec(context, backend, "coreshift_demote")
+                    mark(context, "demote_at")
+                    markDemote(context)
+                }
+            } finally {
+                armAutoShutdown()
             }
         }
     }
@@ -71,41 +99,36 @@ object Policy {
         val p = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
         if (p.contains("discovery_at")) return
 
-        Runtime.exec(context, backend, "coreshift_discovery")
+        Runtime.exec(context, backend, "coreshift_discovery", wait = true)
         mark(context, "discovery_at")
     }
-}
 
-object Rate {
-
-    private const val WINDOW = 5 * 60 * 1000L
-    private const val COOLDOWN = 60 * 60 * 1000L
-
-    fun record(context: Context) {
-        enforceSize(context, PREF_RATE)
-
+    private fun recordRate(context: Context) {
         val p = context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         val w = p.getLong("w", 0)
         val c = p.getInt("c", 0)
 
-        if (now - w > WINDOW)
+        if (now - w > RATE_WINDOW_MS)
             p.edit().putLong("w", now).putInt("c", 1).apply()
         else
             p.edit().putInt("c", c + 1).apply()
     }
 
-    fun shouldDemote(context: Context): Boolean {
+    private fun shouldDemote(context: Context): Boolean {
         val p = context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
-        return p.getInt("c", 0) >= 10 &&
-            System.currentTimeMillis() - p.getLong("d", 0) >= COOLDOWN
+        val count = p.getInt("c", 0)
+        val last = p.getLong("d", 0)
+
+        return count >= DEMOTE_THRESHOLD &&
+            System.currentTimeMillis() - last >= RATE_COOLDOWN_MS
     }
 
-    fun mark(context: Context) {
-        enforceSize(context, PREF_RATE)
+    private fun markDemote(context: Context) {
         context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
             .edit()
             .putLong("d", System.currentTimeMillis())
+            .putInt("c", 0)
             .apply()
     }
 }
@@ -125,6 +148,14 @@ object Eligibility {
         synchronized(this) {
             if (init.get()) return
 
+            val prefs = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
+            val cached = prefs.getStringSet("user_pkgs", null)
+            if (cached != null) {
+                pkgs.addAll(cached)
+                init.set(true)
+                return
+            }
+
             val backend = Runtime.resolvePrivilege(context)
             if (backend == PrivilegeBackend.NONE) {
                 init.set(true)
@@ -138,11 +169,9 @@ object Eligibility {
                 val pb = when (backend) {
                     PrivilegeBackend.ROOT ->
                         ProcessBuilder("su", "-c", cmd)
-
                     PrivilegeBackend.SHELL ->
                         ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
                             .also { Runtime.applyAxerishEnv(context, it) }
-
                     else -> return
                 }
 
@@ -150,6 +179,8 @@ object Eligibility {
                     if (it.startsWith("package:"))
                         pkgs += it.substringAfter("package:")
                 }
+
+                prefs.edit().putStringSet("user_pkgs", HashSet(pkgs)).apply()
             } finally {
                 init.set(true)
             }

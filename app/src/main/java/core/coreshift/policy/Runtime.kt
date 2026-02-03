@@ -3,6 +3,7 @@ package core.coreshift.policy
 import android.content.Context
 import android.os.Build
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 enum class PrivilegeBackend { ROOT, SHELL, NONE }
 
@@ -10,6 +11,8 @@ object Runtime {
 
     @Volatile
     private var cached: PrivilegeBackend? = null
+
+    private val bg = Executors.newCachedThreadPool()
 
     fun clearCache() {
         cached = null
@@ -24,6 +27,9 @@ object Runtime {
 
     fun install(context: Context) {
         val abi = selectAbi()
+        val prefs = context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("install_done_$abi", false)) return
+
         val binDir = context.filesDir.resolve("bin")
         if (!binDir.exists()) binDir.mkdirs()
 
@@ -37,12 +43,6 @@ object Runtime {
 
         for (name in files) {
             val out = binDir.resolve(name)
-            val needs =
-                !out.exists() ||
-                (name.endsWith(".dex") && out.canWrite()) ||
-                (!name.endsWith(".dex") && !out.canExecute())
-
-            if (!needs) continue
 
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
@@ -60,6 +60,8 @@ object Runtime {
                 out.setExecutable(true, true)
             }
         }
+
+        prefs.edit().putBoolean("install_done_$abi", true).apply()
     }
 
     fun resolvePrivilege(context: Context): PrivilegeBackend {
@@ -102,22 +104,29 @@ object Runtime {
             pb.start().waitFor() == 0
         } catch (_: Throwable) { false }
 
-    fun exec(context: Context, backend: PrivilegeBackend, binary: String) {
+    fun exec(context: Context, backend: PrivilegeBackend, binary: String, wait: Boolean = false) {
         val bin = context.filesDir.resolve("bin").absolutePath
         val cmd = "$bin/$binary"
 
-        try {
-            val pb = when (backend) {
-                PrivilegeBackend.ROOT ->
-                    ProcessBuilder("su", "-c", cmd)
-                        .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
-                PrivilegeBackend.SHELL ->
-                    ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
-                        .also { applyAxerishEnv(context, it) }
-                else -> return
+        val pb = when (backend) {
+            PrivilegeBackend.ROOT ->
+                ProcessBuilder("su", "-c", cmd)
+                    .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
+
+            PrivilegeBackend.SHELL ->
+                ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
+                    .also { applyAxerishEnv(context, it) }
+
+            else -> return
+        }
+
+        if (wait) {
+            try { pb.start().waitFor() } catch (_: Throwable) {}
+        } else {
+            bg.execute {
+                try { pb.start() } catch (_: Throwable) {}
             }
-            pb.start().waitFor()
-        } catch (_: Throwable) {}
+        }
     }
 
     fun applyAxerishEnv(context: Context, pb: ProcessBuilder) {

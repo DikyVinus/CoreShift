@@ -21,7 +21,7 @@ class CoreShiftApp : Application() {
         if (backend == PrivilegeBackend.NONE) {
             startService(Intent(this, OverlayService::class.java))
         } else {
-            Policy.discoveryOnce(this, backend)
+            Policy.discovery(this, backend)
         }
     }
 }
@@ -66,7 +66,7 @@ class OverlayService : Service() {
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
         icon = ImageView(this).apply {
-            setImageResource(R.mipmap.ic_coreshift)
+            setImageResource(R.drawable.ic_coreshift)
             setOnClickListener { request() }
             isClickable = true
             isFocusable = false
@@ -89,7 +89,7 @@ class OverlayService : Service() {
     private fun request() {
         val backend = Runtime.resolvePrivilege(this)
         if (backend != PrivilegeBackend.NONE) {
-            Policy.discoveryOnce(this, backend)
+            Policy.discovery(this, backend)
             cleanup()
         }
     }

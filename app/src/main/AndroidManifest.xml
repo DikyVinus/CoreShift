@@ -6,8 +6,8 @@
     <application
         android:name=".CoreShiftApp"
         android:label="@string/app_name"
-        android:icon="@mipmap/ic_coreshift"
-        android:roundIcon="@mipmap/ic_coreshift"
+        android:icon="@drawable/ic_coreshift"
+        android:roundIcon="@drawable/ic_coreshift"
         android:allowBackup="false"
         android:extractNativeLibs="true">
 

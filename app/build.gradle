@@ -15,30 +15,33 @@ android {
         versionName "1.0"
     }
 
-    def hasSigning =
-        System.getenv("RELEASE_KEYSTORE_PATH") &&
-        System.getenv("RELEASE_KEYSTORE_PASSWORD") &&
-        System.getenv("RELEASE_KEY_ALIAS") &&
-        System.getenv("RELEASE_KEY_PASSWORD")
-
     signingConfigs {
-        if (hasSigning) {
-            release {
-                storeFile file(System.getenv("RELEASE_KEYSTORE_PATH"))
-                storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("RELEASE_KEY_ALIAS")
-                keyPassword System.getenv("RELEASE_KEY_PASSWORD")
+        release {
+            def ksPath = System.getenv("RELEASE_KEYSTORE_PATH")
+            def ksPass = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            def keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            def keyPass = System.getenv("RELEASE_KEY_PASSWORD")
+
+            if (ksPath && ksPass && keyAlias && keyPass) {
+                storeFile file(ksPath)
+                storePassword ksPass
+                keyAlias keyAlias
+                keyPassword keyPass
             }
         }
     }
 
     buildTypes {
+        debug {
+            debuggable true
+        }
+
         release {
             debuggable false
             minifyEnabled false
             shrinkResources false
 
-            if (hasSigning) {
+            if (signingConfigs.release.storeFile != null) {
                 signingConfig signingConfigs.release
             }
         }
@@ -62,5 +65,5 @@ android {
 }
 
 dependencies {
-    // no runtime deps
+    // Kotlin stdlib provided by AGP
 }

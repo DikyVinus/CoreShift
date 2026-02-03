@@ -8,11 +8,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val PREF_STATE = "coreshift_state"
 private const val PREF_RATE = "rate"
-private const val PREF_MAX_BYTES = 1024 * 1024 // 1MB
+private const val PREF_MAX_BYTES = 1024 * 1024 
 
-/* =======================
- * WHITELIST
- * ======================= */
 private val FOREGROUND_WHITELIST = setOf(
     "com.android.launcher3",
     "com.android.settings",
@@ -20,9 +17,6 @@ private val FOREGROUND_WHITELIST = setOf(
     "com.android.chrome"
 )
 
-/* =======================
- * PREF UTILS
- * ======================= */
 private fun prefsFile(context: Context, name: String): File =
     File(context.applicationInfo.dataDir, "shared_prefs/$name.xml")
 
@@ -44,9 +38,6 @@ private fun mark(context: Context, key: String) {
         .apply()
 }
 
-/* =======================
- * POLICY
- * ======================= */
 object Policy {
 
     private val exec = Executors.newSingleThreadExecutor()
@@ -56,7 +47,6 @@ object Policy {
         exec.execute {
             if (pkg == lastPkg.getAndSet(pkg)) return@execute
 
-            // FIX: user app OR whitelist (not AND)
             if (!Eligibility.isUser(context, pkg) &&
                 !FOREGROUND_WHITELIST.contains(pkg)
             ) return@execute
@@ -86,9 +76,6 @@ object Policy {
     }
 }
 
-/* =======================
- * RATE LIMIT
- * ======================= */
 object Rate {
 
     private const val WINDOW = 5 * 60 * 1000L
@@ -123,9 +110,6 @@ object Rate {
     }
 }
 
-/* =======================
- * ELIGIBILITY
- * ======================= */
 object Eligibility {
 
     private val init = AtomicBoolean(false)

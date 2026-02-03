@@ -89,10 +89,3 @@ object AxerishEnv {
     }
 }
 
-object RootEnv {
-
-    fun apply(context: Context, pb: ProcessBuilder) {
-        val binDir = File(context.filesDir, "bin").absolutePath
-        pb.environment()["PATH"] = "$binDir:/system/bin:/system/xbin"
-    }
-}

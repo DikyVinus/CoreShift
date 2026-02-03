@@ -13,7 +13,6 @@ object BinaryInstaller {
 
         if (!binDir.exists()) binDir.mkdirs()
 
-        // Always re-enforce permissions
         binDir.setReadable(true, true)
         binDir.setWritable(true, true)
         binDir.setExecutable(true, true)
@@ -95,9 +94,7 @@ object NativeExecutor {
         try {
             val pb = when (backend) {
                 PrivilegeBackend.ROOT ->
-                    ProcessBuilder("su", "-c", cmd).also {
-                        RootEnv.apply(context, it)
-                    }
+                    ProcessBuilder("su", "-c", cmd)
 
                 PrivilegeBackend.SHELL ->
                     ProcessBuilder(

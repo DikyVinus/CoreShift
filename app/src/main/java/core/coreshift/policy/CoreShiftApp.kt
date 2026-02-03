@@ -7,10 +7,11 @@ import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
-import android.view.Gravity
-import android.view.WindowManager
+import android.util.TypedValue
+import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
+import kotlin.math.roundToInt
 
 class CoreShiftApp : Application() {
     override fun onCreate() {
@@ -29,6 +30,7 @@ class CoreShiftApp : Application() {
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         if (!Settings.canDrawOverlays(this)) {
             startActivity(
                 Intent(
@@ -47,43 +49,92 @@ class CoreShiftAccessibility : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         Policy.onForeground(this, pkg)
     }
+
     override fun onInterrupt() {}
 }
 
 class OverlayService : Service() {
+
     private var wm: WindowManager? = null
     private var icon: ImageView? = null
+    private var params: WindowManager.LayoutParams? = null
 
     override fun onCreate() {
         super.onCreate()
 
-        if (Runtime.resolvePrivilege(this) != PrivilegeBackend.NONE ||
+        if (
+            Runtime.resolvePrivilege(this) != PrivilegeBackend.NONE ||
             !Settings.canDrawOverlays(this)
         ) {
-            stopSelf(); return
+            stopSelf()
+            return
         }
 
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        val sizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            48f,
+            resources.displayMetrics
+        ).roundToInt()
+
         icon = ImageView(this).apply {
             setImageResource(R.drawable.ic_coreshift)
-            setOnClickListener { request() }
+
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            adjustViewBounds = true
+
             isClickable = true
             isFocusable = false
         }
 
-        wm!!.addView(
-            icon,
-            WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        params = WindowManager.LayoutParams(
+            sizePx,
+            sizePx,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            x = 0
+            y = 0
+        }
+
+        icon!!.setOnTouchListener(DragTouchListener())
+
+        wm!!.addView(icon, params)
+    }
+
+    private inner class DragTouchListener : View.OnTouchListener {
+        private var startX = 0
+        private var startY = 0
+        private var touchX = 0f
+        private var touchY = 0f
+
+        override fun onTouch(v: View, e: MotionEvent): Boolean {
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = params!!.x
+                    startY = params!!.y
+                    touchX = e.rawX
+                    touchY = e.rawY
+                    return true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    params!!.x = startX + (touchX - e.rawX).roundToInt()
+                    params!!.y = startY + (e.rawY - touchY).roundToInt()
+                    wm!!.updateViewLayout(icon, params)
+                    return true
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    request()
+                    return true
+                }
             }
-        )
+            return false
+        }
     }
 
     private fun request() {
@@ -95,7 +146,9 @@ class OverlayService : Service() {
     }
 
     private fun cleanup() {
-        try { icon?.let { wm?.removeView(it) } } catch (_: Throwable) {}
+        try {
+            icon?.let { wm?.removeView(it) }
+        } catch (_: Throwable) {}
         stopSelf()
     }
 

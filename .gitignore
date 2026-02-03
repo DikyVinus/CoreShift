@@ -1,0 +1,32 @@
+# === Android build ===
+/build/
+/out/
+/app/build/
+/.gradle/
+/local.properties
+
+# === Keystores (ABSOLUTE NEVER COMMIT) ===
+*.keystore
+*.jks
+*.bks
+*.p12
+*.pem
+*.der
+*.b64
+
+# Explicit CoreShift keystore names
+core-shift-release.keystore
+core-shift-release.keystore.b64
+
+# === Secrets / signing ===
+keystore.properties
+signing.properties
+*.properties.local
+
+# === IDE ===
+.idea/
+*.iml
+
+# === OS ===
+.DS_Store
+Thumbs.db

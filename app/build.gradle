@@ -15,19 +15,22 @@ android {
         versionName "1.0"
     }
 
-    buildTypes {
-        debug {
-            debuggable true
-        }
+    signingConfigs {
         release {
+            storeFile file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "")
+            storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            keyAlias System.getenv("RELEASE_KEY_ALIAS")
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD")
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
             debuggable false
             minifyEnabled false
             shrinkResources false
         }
-    }
-
-    buildFeatures {
-        buildConfig false
     }
 
     compileOptions {
@@ -45,8 +48,4 @@ android {
             pickFirsts += ["lib/**/libcoreshift.so"]
         }
     }
-}
-
-dependencies {
-    // Kotlin stdlib provided by AGP
 }

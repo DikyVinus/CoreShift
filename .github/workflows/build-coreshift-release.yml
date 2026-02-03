@@ -1,4 +1,4 @@
-name: Build CoreShift (Release)
+name: Build CoreShift (Stable Release)
 
 on:
   push:

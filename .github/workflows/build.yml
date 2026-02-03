@@ -24,30 +24,42 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install SDK components
+        shell: bash
         run: |
+          set -e
           sdkmanager \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Restore keystore (only if present)
-        if: secrets.RELEASE_KEYSTORE_B64 != ''
-        run: |
-          echo "$RELEASE_KEYSTORE_B64" | base64 --decode > release.keystore
-          echo "RELEASE_KEYSTORE_PATH=$PWD/release.keystore" >> "$GITHUB_ENV"
+      - name: Restore keystore (optional)
+        shell: bash
         env:
           RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+        run: |
+          set -e
+          if [ -n "$RELEASE_KEYSTORE_B64" ]; then
+            echo "$RELEASE_KEYSTORE_B64" | base64 --decode > release.keystore
+            echo "RELEASE_KEYSTORE_PATH=$PWD/release.keystore" >> "$GITHUB_ENV"
+            echo "Keystore restored"
+          else
+            echo "No keystore provided, building unsigned APK"
+          fi
 
       - name: Build release APK
+        shell: bash
         env:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
+          set -e
           chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Collect APK
+        shell: bash
         run: |
+          set -e
           mkdir -p out
           cp app/build/outputs/apk/release/*.apk \
              out/CoreShift-release.apk

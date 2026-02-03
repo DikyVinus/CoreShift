@@ -4,6 +4,7 @@ import android.app.*
 import android.accessibilityservice.AccessibilityService
 import android.content.*
 import android.graphics.*
+import android.graphics.drawable.PaintDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings

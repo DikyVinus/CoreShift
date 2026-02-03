@@ -87,7 +87,6 @@ class OverlayService : Service() {
     }
 
     private fun request() {
-        Runtime.resolvePrivilege(this)
         val backend = Runtime.resolvePrivilege(this)
         if (backend != PrivilegeBackend.NONE) {
             Policy.discoveryOnce(this, backend)

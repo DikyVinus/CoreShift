@@ -1,13 +1,18 @@
 package core.coreshift.policy
 
 import android.content.Context
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.text.SimpleDateFormat
-import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+
+private const val PREF_STATE = "coreshift_state"
+
+private fun mark(context: Context, key: String) {
+    context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
+        .edit()
+        .putLong(key, System.currentTimeMillis())
+        .apply()
+}
 
 object Policy {
 
@@ -22,34 +27,33 @@ object Policy {
             val backend = Runtime.resolvePrivilege(context)
             if (backend == PrivilegeBackend.NONE) return@execute
 
-            log(context, "EXEC $pkg")
-            Runtime.exec(context, backend, "coreshift_exec")
+            // record execution timestamp (overwrite allowed)
+            mark(context, "exec_at")
+
+            // increment rate counter (FIX: required for demotion to ever trigger)
             Rate.record(context)
+
+            Runtime.exec(context, backend, "coreshift_exec")
 
             if (Rate.shouldDemote(context)) {
                 Runtime.exec(context, backend, "coreshift_demote")
+                mark(context, "demote_at")
                 Rate.mark(context)
             }
         }
     }
 
     fun discoveryOnce(context: Context, backend: PrivilegeBackend) {
-        val p = context.getSharedPreferences("coreshift", Context.MODE_PRIVATE)
-        if (p.getBoolean("done", false)) return
-        Runtime.exec(context, backend, "coreshift_discovery")
-        p.edit().putBoolean("done", true).apply()
-    }
+        val p = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
+        if (p.contains("discovery_at")) return
 
-    private fun log(context: Context, msg: String) {
-        try {
-            val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            context.filesDir.resolve("policy.log")
-                .appendText("[$ts] $msg\n")
-        } catch (_: Throwable) {}
+        Runtime.exec(context, backend, "coreshift_discovery")
+        mark(context, "discovery_at")
     }
 }
 
 object Rate {
+
     private const val PREF = "rate"
     private const val WINDOW = 5 * 60 * 1000L
     private const val COOLDOWN = 60 * 60 * 1000L
@@ -81,6 +85,7 @@ object Rate {
 }
 
 object Eligibility {
+
     private val init = AtomicBoolean(false)
     private val pkgs = HashSet<String>()
 
@@ -96,7 +101,8 @@ object Eligibility {
 
             val backend = Runtime.resolvePrivilege(context)
             if (backend == PrivilegeBackend.NONE) {
-                init.set(true); return
+                init.set(true)
+                return
             }
 
             val bin = context.filesDir.resolve("bin").absolutePath
@@ -114,12 +120,10 @@ object Eligibility {
                     else -> return
                 }
 
-                BufferedReader(InputStreamReader(pb.start().inputStream))
-                    .forEachLine {
-                        if (it.startsWith("package:"))
-                            pkgs += it.substringAfter("package:")
-                    }
-            } catch (_: Throwable) {
+                pb.start().inputStream.bufferedReader().forEachLine {
+                    if (it.startsWith("package:"))
+                        pkgs += it.substringAfter("package:")
+                }
             } finally {
                 init.set(true)
             }

@@ -2,7 +2,6 @@ package core.coreshift.policy
 
 import android.content.Context
 import android.os.Build
-import java.io.File
 import java.io.FileOutputStream
 
 enum class PrivilegeBackend { ROOT, SHELL, NONE }
@@ -12,17 +11,18 @@ object Runtime {
     @Volatile
     private var cached: PrivilegeBackend? = null
 
-    /* =======================
-     * INSTALL
-     * ======================= */
+    private fun markPrivilege(context: Context) {
+        val p = context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
+        if (!p.contains("privilege_at")) {
+            p.edit().putLong("privilege_at", System.currentTimeMillis()).apply()
+        }
+    }
 
     fun install(context: Context) {
         val abi = selectAbi()
         val binDir = context.filesDir.resolve("bin")
-
         if (!binDir.exists()) binDir.mkdirs()
 
-        // enforce private executable dir
         binDir.setReadable(true, true)
         binDir.setWritable(true, true)
         binDir.setExecutable(true, true)
@@ -33,13 +33,12 @@ object Runtime {
 
         for (name in files) {
             val out = binDir.resolve(name)
-
-            val needsInstall =
+            val needs =
                 !out.exists() ||
                 (name.endsWith(".dex") && out.canWrite()) ||
                 (!name.endsWith(".dex") && !out.canExecute())
 
-            if (!needsInstall) continue
+            if (!needs) continue
 
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
@@ -59,17 +58,6 @@ object Runtime {
         }
     }
 
-    private fun selectAbi(): String =
-        when {
-            Build.SUPPORTED_ABIS.contains("arm64-v8a") -> "arm64-v8a"
-            Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> "armeabi-v7a"
-            else -> error("Unsupported ABI")
-        }
-
-    /* =======================
-     * PRIVILEGE
-     * ======================= */
-
     fun resolvePrivilege(context: Context): PrivilegeBackend {
         cached?.let { return it }
 
@@ -78,11 +66,13 @@ object Runtime {
 
             if (tryRoot(context)) {
                 cached = PrivilegeBackend.ROOT
+                markPrivilege(context)
                 return cached!!
             }
 
             if (tryShell(context)) {
                 cached = PrivilegeBackend.SHELL
+                markPrivilege(context)
                 return cached!!
             }
 
@@ -95,14 +85,10 @@ object Runtime {
         try {
             val bin = context.filesDir.resolve("bin").absolutePath
             ProcessBuilder("su", "-c", "id")
-                .apply {
-                    environment()["PATH"] = "$bin:/system/bin:/system/xbin"
-                }
+                .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
                 .start()
                 .waitFor() == 0
-        } catch (_: Throwable) {
-            false
-        }
+        } catch (_: Throwable) { false }
 
     private fun tryShell(context: Context): Boolean =
         try {
@@ -110,13 +96,7 @@ object Runtime {
             val pb = ProcessBuilder("$bin/axerish", "-c", "\"whoami\"")
             applyAxerishEnv(context, pb)
             pb.start().waitFor() == 0
-        } catch (_: Throwable) {
-            false
-        }
-
-    /* =======================
-     * EXEC
-     * ======================= */
+        } catch (_: Throwable) { false }
 
     fun exec(context: Context, backend: PrivilegeBackend, binary: String) {
         val bin = context.filesDir.resolve("bin").absolutePath
@@ -126,25 +106,15 @@ object Runtime {
             val pb = when (backend) {
                 PrivilegeBackend.ROOT ->
                     ProcessBuilder("su", "-c", cmd)
-                        .apply {
-                            environment()["PATH"] = "$bin:/system/bin:/system/xbin"
-                        }
-
+                        .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
                 PrivilegeBackend.SHELL ->
                     ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
                         .also { applyAxerishEnv(context, it) }
-
                 else -> return
             }
-
             pb.start().waitFor()
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
     }
-
-    /* =======================
-     * AXERISH ENV
-     * ======================= */
 
     fun applyAxerishEnv(context: Context, pb: ProcessBuilder) {
         val bin = context.filesDir.resolve("bin").absolutePath
@@ -159,9 +129,8 @@ object Runtime {
         env.remove("SYSTEMSERVERCLASSPATH")
         env.remove("DEX_PATH")
 
-        val is64 = Build.SUPPORTED_ABIS.any { it.contains("64") }
         val runtimeLib =
-            if (is64)
+            if (Build.SUPPORTED_ABIS.any { it.contains("64") })
                 "/apex/com.android.runtime/lib64:/apex/com.android.art/lib64"
             else
                 "/apex/com.android.runtime/lib:/apex/com.android.art/lib"
@@ -169,4 +138,11 @@ object Runtime {
         env["LD_LIBRARY_PATH"] = "$runtimeLib:$bin"
         env["PATH"] = "$bin:${System.getenv("PATH")}"
     }
+
+    private fun selectAbi(): String =
+        when {
+            Build.SUPPORTED_ABIS.contains("arm64-v8a") -> "arm64-v8a"
+            Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> "armeabi-v7a"
+            else -> error("Unsupported ABI")
+        }
 }

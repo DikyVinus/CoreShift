@@ -12,6 +12,7 @@ import android.util.TypedValue
 import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class CoreShiftApp : Application() {
@@ -59,6 +60,8 @@ class OverlayService : Service() {
     private lateinit var wm: WindowManager
     private lateinit var icon: ImageView
     private lateinit var params: WindowManager.LayoutParams
+    private lateinit var display: Display
+    private lateinit var viewConfig: ViewConfiguration
 
     override fun onCreate() {
         super.onCreate()
@@ -72,6 +75,8 @@ class OverlayService : Service() {
         }
 
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        display = wm.defaultDisplay
+        viewConfig = ViewConfiguration.get(this)
 
         val sizePx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -101,40 +106,82 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            gravity = Gravity.TOP or Gravity.START
+            x = display.width - sizePx
+            y = display.height / 3
         }
 
-        icon.setOnTouchListener(DragTouchListener())
+        icon.setOnTouchListener(DragTouchListener(sizePx))
         wm.addView(icon, params)
     }
 
-    private inner class DragTouchListener : View.OnTouchListener {
+    private inner class DragTouchListener(
+        private val sizePx: Int
+    ) : View.OnTouchListener {
+
         private var startX = 0
         private var startY = 0
-        private var touchX = 0f
-        private var touchY = 0f
+        private var downX = 0f
+        private var downY = 0f
+
+        private val touchSlop = viewConfig.scaledTouchSlop
 
         override fun onTouch(v: View, e: MotionEvent): Boolean {
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = params.x
                     startY = params.y
-                    touchX = e.rawX
-                    touchY = e.rawY
+                    downX = e.rawX
+                    downY = e.rawY
                     return true
                 }
+
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (touchX - e.rawX).roundToInt()
-                    params.y = startY + (e.rawY - touchY).roundToInt()
+                    params.x = startX + (e.rawX - downX).roundToInt()
+                    params.y = startY + (e.rawY - downY).roundToInt()
+
+                    clampY()
                     wm.updateViewLayout(icon, params)
                     return true
                 }
+
                 MotionEvent.ACTION_UP -> {
-                    request()
+                    val dx = abs(e.rawX - downX)
+                    val dy = abs(e.rawY - downY)
+
+                    if (dx < touchSlop && dy < touchSlop) {
+                        icon.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                        request()
+                    } else {
+                        snapToEdge()
+                    }
                     return true
                 }
             }
             return false
+        }
+
+        private fun clampY() {
+            val statusBar = getStatusBarHeight()
+            val maxY = display.height - sizePx
+
+            if (params.y < statusBar) params.y = statusBar
+            if (params.y > maxY) params.y = maxY
+        }
+
+        private fun snapToEdge() {
+            val center = display.width / 2
+            params.x = if (params.x + sizePx / 2 < center) {
+                0
+            } else {
+                display.width - sizePx
+            }
+            wm.updateViewLayout(icon, params)
+        }
+
+        private fun getStatusBarHeight(): Int {
+            val resId = resources.getIdentifier("status_bar_height", "dimen", "android")
+            return if (resId > 0) resources.getDimensionPixelSize(resId) else 0
         }
     }
 

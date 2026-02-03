@@ -3,6 +3,12 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def hasReleaseKeystore =
+        System.getenv("RELEASE_KEYSTORE_PATH") &&
+        System.getenv("RELEASE_KEYSTORE_PASSWORD") &&
+        System.getenv("RELEASE_KEY_ALIAS") &&
+        System.getenv("RELEASE_KEY_PASSWORD")
+
 android {
     namespace 'core.coreshift.policy'
     compileSdk 34
@@ -16,17 +22,12 @@ android {
     }
 
     signingConfigs {
-        release {
-            def ksPath = System.getenv("RELEASE_KEYSTORE_PATH")
-            def ksPass = System.getenv("RELEASE_KEYSTORE_PASSWORD")
-            def keyAliasEnv = System.getenv("RELEASE_KEY_ALIAS")
-            def keyPass = System.getenv("RELEASE_KEY_PASSWORD")
-
-            if (ksPath && ksPass && keyAliasEnv && keyPass) {
-                storeFile file(ksPath)
-                storePassword ksPass
-                keyAlias keyAliasEnv
-                keyPassword keyPass
+        if (hasReleaseKeystore) {
+            release {
+                storeFile file(System.getenv("RELEASE_KEYSTORE_PATH"))
+                storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("RELEASE_KEY_PASSWORD")
             }
         }
     }
@@ -40,7 +41,13 @@ android {
             debuggable false
             minifyEnabled false
             shrinkResources false
-            signingConfig signingConfigs.release
+
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            } else {
+                // fallback: unsigned release (AGP default debug key)
+                signingConfig signingConfigs.debug
+            }
         }
     }
 

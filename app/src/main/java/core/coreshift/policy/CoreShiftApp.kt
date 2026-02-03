@@ -10,7 +10,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.widget.Button
+import android.widget.ImageView
 
 class CoreShiftApp : Application() {
     override fun onCreate() {
@@ -52,7 +52,7 @@ class CoreShiftAccessibility : AccessibilityService() {
 
 class OverlayService : Service() {
     private var wm: WindowManager? = null
-    private var button: Button? = null
+    private var icon: ImageView? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -64,20 +64,25 @@ class OverlayService : Service() {
         }
 
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        button = Button(this).apply {
-            text = "Grant CoreShift Privilege"
+
+        icon = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_coreshift)
             setOnClickListener { request() }
+            isClickable = true
+            isFocusable = false
         }
 
         wm!!.addView(
-            button,
+            icon,
             WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
-            ).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+            ).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            }
         )
     }
 
@@ -91,7 +96,7 @@ class OverlayService : Service() {
     }
 
     private fun cleanup() {
-        try { button?.let { wm?.removeView(it) } } catch (_: Throwable) {}
+        try { icon?.let { wm?.removeView(it) } } catch (_: Throwable) {}
         stopSelf()
     }
 

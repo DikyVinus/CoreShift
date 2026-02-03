@@ -16,7 +16,7 @@ private const val PREF_MAX_BYTES = 1024 * 1024 // 1MB
 private val FOREGROUND_WHITELIST = setOf(
     "com.android.launcher3",
     "com.android.settings",
-    "com.android.vending",          // Play Store
+    "com.android.vending",
     "com.android.chrome"
 )
 
@@ -56,8 +56,10 @@ object Policy {
         exec.execute {
             if (pkg == lastPkg.getAndSet(pkg)) return@execute
 
-            if (!Eligibility.isUser(context, pkg)) return@execute
-            if (!FOREGROUND_WHITELIST.contains(pkg)) return@execute
+            // FIX: user app OR whitelist (not AND)
+            if (!Eligibility.isUser(context, pkg) &&
+                !FOREGROUND_WHITELIST.contains(pkg)
+            ) return@execute
 
             val backend = Runtime.resolvePrivilege(context)
             if (backend == PrivilegeBackend.NONE) return@execute
@@ -76,8 +78,11 @@ object Policy {
     }
 
     fun discovery(context: Context, backend: PrivilegeBackend) {
-        mark(context, "discovery_at")
+        val p = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
+        if (p.contains("discovery_at")) return
+
         Runtime.exec(context, backend, "coreshift_discovery")
+        mark(context, "discovery_at")
     }
 }
 

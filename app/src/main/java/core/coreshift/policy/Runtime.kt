@@ -11,6 +11,10 @@ object Runtime {
     @Volatile
     private var cached: PrivilegeBackend? = null
 
+    fun clearCache() {
+        cached = null
+    }
+
     private fun markPrivilege(context: Context) {
         val p = context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
         if (!p.contains("privilege_at")) {

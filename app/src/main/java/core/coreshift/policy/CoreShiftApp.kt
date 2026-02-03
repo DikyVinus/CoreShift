@@ -3,7 +3,7 @@ package core.coreshift.policy
 import android.app.*
 import android.accessibilityservice.AccessibilityService
 import android.content.*
-import android.graphics.PixelFormat
+import android.graphics.*
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -55,9 +55,9 @@ class CoreShiftAccessibility : AccessibilityService() {
 
 class OverlayService : Service() {
 
-    private var wm: WindowManager? = null
-    private var icon: ImageView? = null
-    private var params: WindowManager.LayoutParams? = null
+    private lateinit var wm: WindowManager
+    private lateinit var icon: ImageView
+    private lateinit var params: WindowManager.LayoutParams
 
     override fun onCreate() {
         super.onCreate()
@@ -80,9 +80,14 @@ class OverlayService : Service() {
 
         icon = ImageView(this).apply {
             setImageResource(R.drawable.ic_coreshift)
-
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-            adjustViewBounds = true
+
+            background = PaintDrawable(Color.TRANSPARENT).apply {
+                setCornerRadius(sizePx.toFloat())
+            }
+
+            clipToOutline = true
+            outlineProvider = ViewOutlineProvider.BACKGROUND
 
             isClickable = true
             isFocusable = false
@@ -96,13 +101,10 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            x = 0
-            y = 0
         }
 
-        icon!!.setOnTouchListener(DragTouchListener())
-
-        wm!!.addView(icon, params)
+        icon.setOnTouchListener(DragTouchListener())
+        wm.addView(icon, params)
     }
 
     private inner class DragTouchListener : View.OnTouchListener {
@@ -114,20 +116,18 @@ class OverlayService : Service() {
         override fun onTouch(v: View, e: MotionEvent): Boolean {
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    startX = params!!.x
-                    startY = params!!.y
+                    startX = params.x
+                    startY = params.y
                     touchX = e.rawX
                     touchY = e.rawY
                     return true
                 }
-
                 MotionEvent.ACTION_MOVE -> {
-                    params!!.x = startX + (touchX - e.rawX).roundToInt()
-                    params!!.y = startY + (e.rawY - touchY).roundToInt()
-                    wm!!.updateViewLayout(icon, params)
+                    params.x = startX + (touchX - e.rawX).roundToInt()
+                    params.y = startY + (e.rawY - touchY).roundToInt()
+                    wm.updateViewLayout(icon, params)
                     return true
                 }
-
                 MotionEvent.ACTION_UP -> {
                     request()
                     return true
@@ -138,6 +138,7 @@ class OverlayService : Service() {
     }
 
     private fun request() {
+        Runtime.clearCache()
         val backend = Runtime.resolvePrivilege(this)
         if (backend != PrivilegeBackend.NONE) {
             Policy.discovery(this, backend)
@@ -146,9 +147,7 @@ class OverlayService : Service() {
     }
 
     private fun cleanup() {
-        try {
-            icon?.let { wm?.removeView(it) }
-        } catch (_: Throwable) {}
+        try { wm.removeView(icon) } catch (_: Throwable) {}
         stopSelf()
     }
 

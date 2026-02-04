@@ -33,9 +33,10 @@ object Runtime {
         val binDir = context.filesDir.resolve("bin")
         if (!binDir.exists()) binDir.mkdirs()
 
-        binDir.setReadable(true, true)
+        // directory must be traversable by shell
+        binDir.setReadable(true, false)
         binDir.setWritable(true, true)
-        binDir.setExecutable(true, true)
+        binDir.setExecutable(true, false)
 
         val assetPath = "native/$abi"
         val am = context.assets
@@ -43,6 +44,7 @@ object Runtime {
 
         for (name in files) {
             val out = binDir.resolve(name)
+
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
@@ -51,13 +53,15 @@ object Runtime {
             }
 
             if (name.endsWith(".dex")) {
-                out.setReadable(true, true)
-                out.setWritable(false, true)
-                out.setExecutable(false, true)
+                // ART requirement: non-writable dex
+                out.setReadable(true, true)     // 0400
+                out.setWritable(false, false)
+                out.setExecutable(false, false)
             } else {
-                out.setReadable(true, true)
-                out.setWritable(false, true)
-                out.setExecutable(true, true)
+                // MUST be executable by shell (uid 2000)
+                out.setReadable(true, false)    // 0755
+                out.setWritable(false, false)
+                out.setExecutable(true, false)
             }
         }
 

@@ -24,7 +24,7 @@ private val FOREGROUND_WHITELIST = setOf(
     "com.android.chrome"
 )
 
-/* ===== Privileged eligibility (shell+root correct) ===== */
+/* ===== Privileged eligibility ===== */
 
 private object Eligibility {
 
@@ -64,15 +64,15 @@ private object Eligibility {
 
             val collected = HashSet<String>()
             val bin = context.filesDir.resolve("bin").absolutePath
-            val cmd = listOf("cmd", "package", "list", "packages", "-3")
+            val shellCmd = "cmd package list packages -3"
 
             try {
                 val pb = when (backend) {
                     PrivilegeBackend.ROOT ->
-                        ProcessBuilder("su", "-c", cmd.joinToString(" "))
+                        ProcessBuilder("su", "-c", shellCmd)
 
                     PrivilegeBackend.SHELL ->
-                        ProcessBuilder(listOf("$bin/axrun") + cmd)
+                        ProcessBuilder("$bin/axrun", "-c", shellCmd)
                             .also { Runtime.applyAxrunEnv(context, it) }
 
                     else -> return
@@ -94,7 +94,7 @@ private object Eligibility {
     }
 }
 
-/* ===================================================== */
+/* ===== Rest unchanged ===== */
 
 private object Prefs {
     lateinit var state: android.content.SharedPreferences
@@ -170,9 +170,6 @@ object PolicyEngine {
                 if (now - lastExecAt.get() < 1000) return@execute
                 lastExecAt.set(now)
 
-                mark(context, "exec_at")
-                recordRate()
-
                 Runtime.exec(
                     context,
                     backend,
@@ -187,7 +184,6 @@ object PolicyEngine {
                         "coreshift_policy_cli",
                         args = listOf("demote")
                     )
-                    mark(context, "demote_at")
                     markDemote()
                 }
             } finally {
@@ -209,17 +205,6 @@ object PolicyEngine {
         )
 
         mark(context, "discovery_at")
-    }
-
-    private fun recordRate() {
-        val now = System.currentTimeMillis()
-        val w = Prefs.rate.getLong("w", 0)
-        val c = Prefs.rate.getInt("c", 0)
-
-        if (now - w > RATE_WINDOW_MS)
-            Prefs.rate.edit().putLong("w", now).putInt("c", 1).apply()
-        else
-            Prefs.rate.edit().putInt("c", c + 1).apply()
     }
 
     private fun shouldDemoteBurst(): Boolean {

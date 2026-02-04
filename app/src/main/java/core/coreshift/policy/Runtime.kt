@@ -35,7 +35,7 @@ object Runtime {
 
         // directory must be traversable by shell
         binDir.setReadable(true, false)
-        binDir.setWritable(true, true)
+        binDir.setWritable(true, false)
         binDir.setExecutable(true, false)
 
         val assetPath = "native/$abi"

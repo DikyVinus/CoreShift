@@ -26,7 +26,11 @@ class CoreShiftApp : Application() {
 
         val backend = Runtime.resolvePrivilege(this)
         if (backend == PrivilegeBackend.NONE) {
-            startService(Intent(this, OverlayService::class.java))
+            val i = Intent(this, OverlayService::class.java)
+            if (Build.VERSION.SDK_INT >= 26)
+                startForegroundService(i)
+            else
+                startService(i)
         } else {
             PolicyEngine.discovery(this, backend)
         }
@@ -90,8 +94,34 @@ class OverlayService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var retries = 0
 
+    private val vibrator by lazy {
+        getSystemService(VIBRATOR_SERVICE) as Vibrator
+    }
+
     override fun onCreate() {
         super.onCreate()
+
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channelId = "coreshift_overlay"
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(channelId) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        channelId,
+                        "CoreShift",
+                        NotificationManager.IMPORTANCE_MIN
+                    )
+                )
+            }
+
+            val n = Notification.Builder(this, channelId)
+                .setSmallIcon(R.drawable.ic_coreshift)
+                .setContentTitle("CoreShift")
+                .setContentText("Waiting for privilege")
+                .build()
+
+            startForeground(1, n)
+        }
 
         if (
             Runtime.resolvePrivilege(this) != PrivilegeBackend.NONE ||
@@ -174,6 +204,23 @@ class OverlayService : Service() {
                 }
 
                 MotionEvent.ACTION_UP -> {
+                    v.performHapticFeedback(
+                        HapticFeedbackConstants.CONTEXT_CLICK,
+                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                    )
+
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                18,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(18)
+                    }
+
                     snap()
                     requestWithRetry()
                     return true

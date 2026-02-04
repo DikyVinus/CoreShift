@@ -12,7 +12,8 @@ object Runtime {
     @Volatile
     private var cached: PrivilegeBackend? = null
 
-    private val bg = Executors.newCachedThreadPool()
+    // Single lane is sufficient and deterministic
+    private val bg = Executors.newSingleThreadExecutor()
 
     fun clearCache() {
         cached = null
@@ -94,7 +95,9 @@ object Runtime {
                 .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
                 .start()
                 .waitFor() == 0
-        } catch (_: Throwable) { false }
+        } catch (_: Throwable) {
+            false
+        }
 
     private fun tryShell(context: Context): Boolean =
         try {
@@ -102,7 +105,9 @@ object Runtime {
             val pb = ProcessBuilder("$bin/axerish", "-c", "\"whoami\"")
             applyAxerishEnv(context, pb)
             pb.start().waitFor() == 0
-        } catch (_: Throwable) { false }
+        } catch (_: Throwable) {
+            false
+        }
 
     fun exec(
         context: Context,

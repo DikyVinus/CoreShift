@@ -43,7 +43,6 @@ object Runtime {
 
         for (name in files) {
             val out = binDir.resolve(name)
-
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
@@ -102,7 +101,7 @@ object Runtime {
     private fun tryShell(context: Context): Boolean =
         try {
             val bin = context.filesDir.resolve("bin").absolutePath
-            val pb = ProcessBuilder("$bin/axrun", "whoami")
+            val pb = ProcessBuilder("$bin/axrun", "-c", "whoami")
             applyAxrunEnv(context, pb)
             pb.start().waitFor() == 0
         } catch (_: Throwable) {
@@ -117,18 +116,15 @@ object Runtime {
         wait: Boolean = false
     ) {
         val bin = context.filesDir.resolve("bin").absolutePath
-
-        val argv = ArrayList<String>()
-        argv += "$bin/$binary"
-        argv += args
+        val cmd = buildShellCommand("$bin/$binary", args)
 
         val pb = when (backend) {
             PrivilegeBackend.ROOT ->
-                ProcessBuilder("su", "-c", argv.joinToString(" "))
+                ProcessBuilder("su", "-c", cmd)
                     .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
 
             PrivilegeBackend.SHELL ->
-                ProcessBuilder(listOf("$bin/axrun") + argv)
+                ProcessBuilder("$bin/axrun", "-c", cmd)
                     .also { applyAxrunEnv(context, it) }
 
             else -> return
@@ -143,7 +139,6 @@ object Runtime {
         }
     }
 
-    // VISIBILITY FIX: must be callable from Policy.kt
     internal fun applyAxrunEnv(context: Context, pb: ProcessBuilder) {
         val bin = context.filesDir.resolve("bin").absolutePath
         val env = pb.environment()
@@ -167,6 +162,18 @@ object Runtime {
         env["LD_LIBRARY_PATH"] = "$runtimeLib:$bin"
         env["PATH"] = "$bin:${System.getenv("PATH")}"
     }
+
+    private fun buildShellCommand(bin: String, args: List<String>): String =
+        buildString {
+            append(bin)
+            for (a in args) {
+                append(' ')
+                append(shellEscape(a))
+            }
+        }
+
+    private fun shellEscape(s: String): String =
+        "'" + s.replace("'", "'\\''") + "'"
 
     private fun selectAbi(): String =
         when {

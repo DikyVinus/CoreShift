@@ -14,7 +14,8 @@ private const val PREF_RATE  = "rate"
 private const val EXECUTOR_IDLE_TIMEOUT_MS = 2 * 60 * 1000L
 private const val RATE_WINDOW_MS = 5 * 60 * 1000L
 private const val RATE_COOLDOWN_MS = 60 * 60 * 1000L
-private const val DEMOTE_THRESHOLD = 10
+private const val DEMOTE_THRESHOLD = 3
+private const val BURST_DEMOTE_THRESHOLD = 5
 
 private val FOREGROUND_WHITELIST = setOf(
     "com.android.launcher3",
@@ -124,12 +125,16 @@ object PolicyEngine {
 
     private val shutdownArmed = AtomicBoolean(false)
 
+    // NEW: burst-scoped demote latch
+    private val demotedThisBurst = AtomicBoolean(false)
+
     private fun ensureExecutor(): ScheduledExecutorService {
         executor?.let { return it }
         synchronized(this) {
             executor?.let { return it }
             executor = Executors.newSingleThreadScheduledExecutor()
             shutdownArmed.set(false)
+            demotedThisBurst.set(false)
             return executor!!
         }
     }
@@ -141,6 +146,8 @@ object PolicyEngine {
                 executor?.shutdown()
                 executor = null
                 shutdownArmed.set(false)
+                demotedThisBurst.set(false)
+                Prefs.rate.edit().putInt("c", 0).apply()
             }
         }, EXECUTOR_IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     }
@@ -176,7 +183,7 @@ object PolicyEngine {
                     args = listOf("boost", pkg)
                 )
 
-                if (shouldDemote()) {
+                if (shouldDemoteBurst() || shouldDemoteRare()) {
                     Runtime.exec(
                         context,
                         backend,
@@ -218,10 +225,21 @@ object PolicyEngine {
             Prefs.rate.edit().putInt("c", c + 1).apply()
     }
 
-    private fun shouldDemote(): Boolean {
+    // Condition A: burst / app-lifetime demote
+    private fun shouldDemoteBurst(): Boolean {
+        if (demotedThisBurst.get()) return false
+        val count = Prefs.rate.getInt("c", 0)
+        if (count >= BURST_DEMOTE_THRESHOLD) {
+            demotedThisBurst.set(true)
+            return true
+        }
+        return false
+    }
+
+    // Condition B: rare global safety demote (legacy)
+    private fun shouldDemoteRare(): Boolean {
         val count = Prefs.rate.getInt("c", 0)
         val last = Prefs.rate.getLong("d", 0)
-
         return count >= DEMOTE_THRESHOLD &&
             System.currentTimeMillis() - last >= RATE_COOLDOWN_MS
     }

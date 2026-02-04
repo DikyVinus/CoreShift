@@ -2,6 +2,7 @@ package core.coreshift.policy
 
 import android.content.Context
 import android.os.Build
+import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
@@ -27,11 +28,26 @@ object Runtime {
 
     fun install(context: Context) {
         val abi = selectAbi()
-        val prefs = context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
-        if (prefs.getBoolean("install_done_$abi", false)) return
+        val binDir = File(context.filesDir, "bin")
 
-        val binDir = context.filesDir.resolve("bin")
-        if (!binDir.exists()) binDir.mkdirs()
+        /* === verify bin dir is actually writable === */
+        fun isReallyWritable(dir: File): Boolean {
+            return try {
+                val probe = File(dir, ".probe")
+                FileOutputStream(probe).use { it.write(0) }
+                probe.delete()
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
+        if (binDir.exists() && !isReallyWritable(binDir)) {
+            binDir.deleteRecursively()
+        }
+
+        if (!binDir.exists()) {
+            binDir.mkdirs()
+        }
 
         binDir.setReadable(true, false)
         binDir.setWritable(true, false)
@@ -42,7 +58,15 @@ object Runtime {
         val files = am.list(assetPath) ?: return
 
         for (name in files) {
-            val out = binDir.resolve(name)
+            val out = File(binDir, name)
+
+            if (out.exists()) {
+                out.setWritable(true, true)
+                if (!out.delete()) {
+                    throw IllegalStateException("Failed to delete poisoned file: $out")
+                }
+            }
+
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
@@ -51,17 +75,15 @@ object Runtime {
             }
 
             if (name.endsWith(".dex")) {
-                out.setReadable(true, true)   // 0400
+                out.setReadable(true, true)     // 0400
                 out.setWritable(false, false)
                 out.setExecutable(false, false)
             } else {
-                out.setReadable(true, false)  // 0755
+                out.setReadable(true, false)    // 0755
                 out.setWritable(false, false)
                 out.setExecutable(true, false)
             }
         }
-
-        prefs.edit().putBoolean("install_done_$abi", true).apply()
     }
 
     fun resolvePrivilege(context: Context): PrivilegeBackend {
@@ -98,11 +120,6 @@ object Runtime {
             false
         }
 
-    /**
-     * IMPORTANT:
-     * Privilege detection MUST use a shell primitive,
-     * NOT coreshift_policy_cli.
-     */
     private fun tryShell(context: Context): Boolean =
         try {
             val bin = context.filesDir.resolve("bin").absolutePath

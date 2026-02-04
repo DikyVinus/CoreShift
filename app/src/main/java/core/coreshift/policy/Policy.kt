@@ -24,7 +24,7 @@ private val FOREGROUND_WHITELIST = setOf(
     "com.android.chrome"
 )
 
-/* ===== Privileged eligibility (legacy-correct, optimized) ===== */
+/* ===== Privileged eligibility (shell+root correct) ===== */
 
 private object Eligibility {
 
@@ -64,16 +64,16 @@ private object Eligibility {
 
             val collected = HashSet<String>()
             val bin = context.filesDir.resolve("bin").absolutePath
-            val cmd = "cmd package list packages -3"
+            val cmd = listOf("cmd", "package", "list", "packages", "-3")
 
             try {
                 val pb = when (backend) {
                     PrivilegeBackend.ROOT ->
-                        ProcessBuilder("su", "-c", cmd)
+                        ProcessBuilder("su", "-c", cmd.joinToString(" "))
 
                     PrivilegeBackend.SHELL ->
-                        ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
-                            .also { Runtime.applyAxerishEnv(context, it) }
+                        ProcessBuilder(listOf("$bin/axrun") + cmd)
+                            .also { Runtime.applyAxrunEnv(context, it) }
 
                     else -> return
                 }
@@ -94,7 +94,7 @@ private object Eligibility {
     }
 }
 
-/* ============================================================ */
+/* ===================================================== */
 
 private object Prefs {
     lateinit var state: android.content.SharedPreferences
@@ -124,8 +124,6 @@ object PolicyEngine {
     private var executor: ScheduledExecutorService? = null
 
     private val shutdownArmed = AtomicBoolean(false)
-
-    // NEW: burst-scoped demote latch
     private val demotedThisBurst = AtomicBoolean(false)
 
     private fun ensureExecutor(): ScheduledExecutorService {
@@ -163,7 +161,6 @@ object PolicyEngine {
                 val backend = Runtime.resolvePrivilege(context)
                 if (backend == PrivilegeBackend.NONE) return@execute
 
-                // fast path: whitelist first
                 if (!FOREGROUND_WHITELIST.contains(pkg)) {
                     if (!Eligibility.isEligible(context, backend, pkg))
                         return@execute
@@ -225,7 +222,6 @@ object PolicyEngine {
             Prefs.rate.edit().putInt("c", c + 1).apply()
     }
 
-    // Condition A: burst / app-lifetime demote
     private fun shouldDemoteBurst(): Boolean {
         if (demotedThisBurst.get()) return false
         val count = Prefs.rate.getInt("c", 0)
@@ -236,7 +232,6 @@ object PolicyEngine {
         return false
     }
 
-    // Condition B: rare global safety demote (legacy)
     private fun shouldDemoteRare(): Boolean {
         val count = Prefs.rate.getInt("c", 0)
         val last = Prefs.rate.getLong("d", 0)

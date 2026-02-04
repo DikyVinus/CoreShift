@@ -12,7 +12,6 @@ object Runtime {
     @Volatile
     private var cached: PrivilegeBackend? = null
 
-    // Single lane is sufficient and deterministic
     private val bg = Executors.newSingleThreadExecutor()
 
     fun clearCache() {
@@ -48,6 +47,7 @@ object Runtime {
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
+                    output.fd.sync()
                 }
             }
 
@@ -102,8 +102,8 @@ object Runtime {
     private fun tryShell(context: Context): Boolean =
         try {
             val bin = context.filesDir.resolve("bin").absolutePath
-            val pb = ProcessBuilder("$bin/axerish", "-c", "\"whoami\"")
-            applyAxerishEnv(context, pb)
+            val pb = ProcessBuilder("$bin/axrun", "whoami")
+            applyAxrunEnv(context, pb)
             pb.start().waitFor() == 0
         } catch (_: Throwable) {
             false
@@ -117,22 +117,19 @@ object Runtime {
         wait: Boolean = false
     ) {
         val bin = context.filesDir.resolve("bin").absolutePath
-        val cmd = buildString {
-            append("$bin/$binary")
-            for (a in args) {
-                append(" ")
-                append(a)
-            }
-        }
+
+        val argv = ArrayList<String>()
+        argv += "$bin/$binary"
+        argv += args
 
         val pb = when (backend) {
             PrivilegeBackend.ROOT ->
-                ProcessBuilder("su", "-c", cmd)
+                ProcessBuilder("su", "-c", argv.joinToString(" "))
                     .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
 
             PrivilegeBackend.SHELL ->
-                ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
-                    .also { applyAxerishEnv(context, it) }
+                ProcessBuilder(listOf("$bin/axrun") + argv)
+                    .also { applyAxrunEnv(context, it) }
 
             else -> return
         }
@@ -146,10 +143,11 @@ object Runtime {
         }
     }
 
-    fun applyAxerishEnv(context: Context, pb: ProcessBuilder) {
+    private fun applyAxrunEnv(context: Context, pb: ProcessBuilder) {
         val bin = context.filesDir.resolve("bin").absolutePath
         val env = pb.environment()
 
+        env["APPLICATION_ID"] = context.packageName
         env["ANDROID_ROOT"] = "/system"
         env["ANDROID_DATA"] = "/data"
         env["ANDROID_RUNTIME_ROOT"] = "/apex/com.android.runtime"

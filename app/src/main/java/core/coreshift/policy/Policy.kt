@@ -23,19 +23,23 @@ private val FOREGROUND_WHITELIST = setOf(
     "com.android.chrome"
 )
 
-/* ===== Privileged eligibility (legacy-correct) ===== */
+/* ===== Privileged eligibility (legacy-correct, optimized) ===== */
 
 private object Eligibility {
 
     private val init = AtomicBoolean(false)
     private val pkgs = HashSet<String>()
 
-    fun isEligible(context: Context, pkg: String): Boolean {
-        load(context)
+    fun isEligible(
+        context: Context,
+        backend: PrivilegeBackend,
+        pkg: String
+    ): Boolean {
+        load(context, backend)
         return pkgs.contains(pkg)
     }
 
-    private fun load(context: Context) {
+    private fun load(context: Context, backend: PrivilegeBackend) {
         if (init.get()) return
         synchronized(this) {
             if (init.get()) return
@@ -48,7 +52,6 @@ private object Eligibility {
                 return
             }
 
-            val backend = Runtime.resolvePrivilege(context)
             if (backend == PrivilegeBackend.NONE) {
                 init.set(true)
                 return
@@ -61,9 +64,11 @@ private object Eligibility {
                 val pb = when (backend) {
                     PrivilegeBackend.ROOT ->
                         ProcessBuilder("su", "-c", cmd)
+
                     PrivilegeBackend.SHELL ->
                         ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
                             .also { Runtime.applyAxerishEnv(context, it) }
+
                     else -> return
                 }
 
@@ -83,7 +88,7 @@ private object Eligibility {
     }
 }
 
-/* ================================================== */
+/* ============================================================ */
 
 private fun mark(context: Context, key: String) {
     context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
@@ -129,13 +134,13 @@ object PolicyEngine {
             try {
                 if (pkg == lastPkg.getAndSet(pkg)) return@execute
 
-                if (
-                    !Eligibility.isEligible(context, pkg) &&
-                    !FOREGROUND_WHITELIST.contains(pkg)
-                ) return@execute
-
                 val backend = Runtime.resolvePrivilege(context)
                 if (backend == PrivilegeBackend.NONE) return@execute
+
+                if (
+                    !Eligibility.isEligible(context, backend, pkg) &&
+                    !FOREGROUND_WHITELIST.contains(pkg)
+                ) return@execute
 
                 val now = System.currentTimeMillis()
                 if (now - lastExecAt.get() < 1000) return@execute

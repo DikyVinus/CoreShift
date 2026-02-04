@@ -28,7 +28,9 @@ private val FOREGROUND_WHITELIST = setOf(
 private object Eligibility {
 
     private val init = AtomicBoolean(false)
-    private val pkgs = HashSet<String>()
+
+    @Volatile
+    private var pkgs: Set<String> = emptySet()
 
     fun isEligible(
         context: Context,
@@ -44,19 +46,22 @@ private object Eligibility {
         synchronized(this) {
             if (init.get()) return
 
-            val prefs = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
+            val prefs =
+                context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
             val cached = prefs.getStringSet("user_pkgs", null)
             if (cached != null) {
-                pkgs.addAll(cached)
+                pkgs = cached.toSet()
                 init.set(true)
                 return
             }
 
             if (backend == PrivilegeBackend.NONE) {
+                pkgs = emptySet()
                 init.set(true)
                 return
             }
 
+            val collected = HashSet<String>()
             val bin = context.filesDir.resolve("bin").absolutePath
             val cmd = "cmd package list packages -3"
 
@@ -74,13 +79,13 @@ private object Eligibility {
 
                 pb.start().inputStream.bufferedReader().forEachLine {
                     if (it.startsWith("package:"))
-                        pkgs += it.substringAfter("package:")
+                        collected += it.substringAfter("package:")
                 }
 
+                pkgs = collected.toSet()
                 prefs.edit()
                     .putStringSet("user_pkgs", HashSet(pkgs))
                     .apply()
-
             } finally {
                 init.set(true)
             }
@@ -90,9 +95,21 @@ private object Eligibility {
 
 /* ============================================================ */
 
+private object Prefs {
+    lateinit var state: android.content.SharedPreferences
+    lateinit var rate: android.content.SharedPreferences
+
+    fun init(context: Context) {
+        if (!this::state.isInitialized) {
+            state = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
+            rate  = context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
+        }
+    }
+}
+
 private fun mark(context: Context, key: String) {
-    context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
-        .edit()
+    Prefs.init(context)
+    Prefs.state.edit()
         .putLong(key, System.currentTimeMillis())
         .apply()
 }
@@ -129,6 +146,8 @@ object PolicyEngine {
     }
 
     fun onForeground(context: Context, pkg: String) {
+        Prefs.init(context)
+
         val exec = ensureExecutor()
         exec.execute {
             try {
@@ -137,17 +156,18 @@ object PolicyEngine {
                 val backend = Runtime.resolvePrivilege(context)
                 if (backend == PrivilegeBackend.NONE) return@execute
 
-                if (
-                    !Eligibility.isEligible(context, backend, pkg) &&
-                    !FOREGROUND_WHITELIST.contains(pkg)
-                ) return@execute
+                // fast path: whitelist first
+                if (!FOREGROUND_WHITELIST.contains(pkg)) {
+                    if (!Eligibility.isEligible(context, backend, pkg))
+                        return@execute
+                }
 
                 val now = System.currentTimeMillis()
                 if (now - lastExecAt.get() < 1000) return@execute
                 lastExecAt.set(now)
 
                 mark(context, "exec_at")
-                recordRate(context)
+                recordRate()
 
                 Runtime.exec(
                     context,
@@ -156,7 +176,7 @@ object PolicyEngine {
                     args = listOf("boost", pkg)
                 )
 
-                if (shouldDemote(context)) {
+                if (shouldDemote()) {
                     Runtime.exec(
                         context,
                         backend,
@@ -164,7 +184,7 @@ object PolicyEngine {
                         args = listOf("demote")
                     )
                     mark(context, "demote_at")
-                    markDemote(context)
+                    markDemote()
                 }
             } finally {
                 armAutoShutdown()
@@ -173,8 +193,8 @@ object PolicyEngine {
     }
 
     fun discovery(context: Context, backend: PrivilegeBackend) {
-        val p = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
-        if (p.contains("discovery_at")) return
+        Prefs.init(context)
+        if (Prefs.state.contains("discovery_at")) return
 
         Runtime.exec(
             context,
@@ -187,30 +207,27 @@ object PolicyEngine {
         mark(context, "discovery_at")
     }
 
-    private fun recordRate(context: Context) {
-        val p = context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
+    private fun recordRate() {
         val now = System.currentTimeMillis()
-        val w = p.getLong("w", 0)
-        val c = p.getInt("c", 0)
+        val w = Prefs.rate.getLong("w", 0)
+        val c = Prefs.rate.getInt("c", 0)
 
         if (now - w > RATE_WINDOW_MS)
-            p.edit().putLong("w", now).putInt("c", 1).apply()
+            Prefs.rate.edit().putLong("w", now).putInt("c", 1).apply()
         else
-            p.edit().putInt("c", c + 1).apply()
+            Prefs.rate.edit().putInt("c", c + 1).apply()
     }
 
-    private fun shouldDemote(context: Context): Boolean {
-        val p = context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
-        val count = p.getInt("c", 0)
-        val last = p.getLong("d", 0)
+    private fun shouldDemote(): Boolean {
+        val count = Prefs.rate.getInt("c", 0)
+        val last = Prefs.rate.getLong("d", 0)
 
         return count >= DEMOTE_THRESHOLD &&
             System.currentTimeMillis() - last >= RATE_COOLDOWN_MS
     }
 
-    private fun markDemote(context: Context) {
-        context.getSharedPreferences(PREF_RATE, Context.MODE_PRIVATE)
-            .edit()
+    private fun markDemote() {
+        Prefs.rate.edit()
             .putLong("d", System.currentTimeMillis())
             .putInt("c", 0)
             .apply()

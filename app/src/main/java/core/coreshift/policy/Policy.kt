@@ -1,7 +1,7 @@
 package core.coreshift.policy
 
 import android.content.Context
-import java.io.File
+import android.content.pm.ApplicationInfo
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -23,6 +23,19 @@ private val FOREGROUND_WHITELIST = setOf(
     "com.android.vending",
     "com.android.chrome"
 )
+
+/* ===== Eligibility (inlined, legacy behavior preserved) ===== */
+
+private fun isUserApp(context: Context, pkg: String): Boolean =
+    try {
+        val ai = context.packageManager.getApplicationInfo(pkg, 0)
+        (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
+        (ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+    } catch (_: Throwable) {
+        false
+    }
+
+/* =========================================================== */
 
 private fun mark(context: Context, key: String) {
     context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
@@ -68,7 +81,7 @@ object PolicyEngine {
             try {
                 if (pkg == lastPkg.getAndSet(pkg)) return@execute
 
-                if (!Eligibility.isUser(context, pkg) &&
+                if (!isUserApp(context, pkg) &&
                     !FOREGROUND_WHITELIST.contains(pkg)
                 ) return@execute
 
@@ -82,10 +95,20 @@ object PolicyEngine {
                 mark(context, "exec_at")
                 recordRate(context)
 
-                Runtime.exec(context, backend, "coreshift_exec")
+                Runtime.exec(
+                    context,
+                    backend,
+                    "coreshift_policy_cli",
+                    args = listOf("boost", pkg)
+                )
 
                 if (shouldDemote(context)) {
-                    Runtime.exec(context, backend, "coreshift_demote")
+                    Runtime.exec(
+                        context,
+                        backend,
+                        "coreshift_policy_cli",
+                        args = listOf("demote")
+                    )
                     mark(context, "demote_at")
                     markDemote(context)
                 }
@@ -99,7 +122,14 @@ object PolicyEngine {
         val p = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
         if (p.contains("discovery_at")) return
 
-        Runtime.exec(context, backend, "coreshift_discovery", wait = true)
+        Runtime.exec(
+            context,
+            backend,
+            "coreshift_policy_cli",
+            args = listOf("discovery"),
+            wait = true
+        )
+
         mark(context, "discovery_at")
     }
 
@@ -130,60 +160,5 @@ object PolicyEngine {
             .putLong("d", System.currentTimeMillis())
             .putInt("c", 0)
             .apply()
-    }
-}
-
-object Eligibility {
-
-    private val init = AtomicBoolean(false)
-    private val pkgs = HashSet<String>()
-
-    fun isUser(context: Context, pkg: String): Boolean {
-        load(context)
-        return pkgs.contains(pkg)
-    }
-
-    private fun load(context: Context) {
-        if (init.get()) return
-        synchronized(this) {
-            if (init.get()) return
-
-            val prefs = context.getSharedPreferences(PREF_STATE, Context.MODE_PRIVATE)
-            val cached = prefs.getStringSet("user_pkgs", null)
-            if (cached != null) {
-                pkgs.addAll(cached)
-                init.set(true)
-                return
-            }
-
-            val backend = Runtime.resolvePrivilege(context)
-            if (backend == PrivilegeBackend.NONE) {
-                init.set(true)
-                return
-            }
-
-            val bin = context.filesDir.resolve("bin").absolutePath
-            val cmd = "cmd package list packages -3"
-
-            try {
-                val pb = when (backend) {
-                    PrivilegeBackend.ROOT ->
-                        ProcessBuilder("su", "-c", cmd)
-                    PrivilegeBackend.SHELL ->
-                        ProcessBuilder("$bin/axerish", "-c", "\"$cmd\"")
-                            .also { Runtime.applyAxerishEnv(context, it) }
-                    else -> return
-                }
-
-                pb.start().inputStream.bufferedReader().forEachLine {
-                    if (it.startsWith("package:"))
-                        pkgs += it.substringAfter("package:")
-                }
-
-                prefs.edit().putStringSet("user_pkgs", HashSet(pkgs)).apply()
-            } finally {
-                init.set(true)
-            }
-        }
     }
 }

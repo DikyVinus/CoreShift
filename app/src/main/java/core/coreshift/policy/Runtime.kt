@@ -104,9 +104,21 @@ object Runtime {
             pb.start().waitFor() == 0
         } catch (_: Throwable) { false }
 
-    fun exec(context: Context, backend: PrivilegeBackend, binary: String, wait: Boolean = false) {
+    fun exec(
+        context: Context,
+        backend: PrivilegeBackend,
+        binary: String,
+        args: List<String> = emptyList(),
+        wait: Boolean = false
+    ) {
         val bin = context.filesDir.resolve("bin").absolutePath
-        val cmd = "$bin/$binary"
+        val cmd = buildString {
+            append("$bin/$binary")
+            for (a in args) {
+                append(" ")
+                append(a)
+            }
+        }
 
         val pb = when (backend) {
             PrivilegeBackend.ROOT ->

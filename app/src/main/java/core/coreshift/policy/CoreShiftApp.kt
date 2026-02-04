@@ -16,6 +16,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val FOREGROUND_STABLE_MS = 5_000L
+private const val SHELL_RETRY_DELAY_MS = 300L
+private const val SHELL_RETRY_MAX = 20
 
 class CoreShiftApp : Application() {
     override fun onCreate() {
@@ -49,7 +51,6 @@ class MainActivity : Activity() {
 class CoreShiftAccessibility : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-
     private var candidatePkg: String? = null
     private var confirmRunnable: Runnable? = null
 
@@ -60,7 +61,6 @@ class CoreShiftAccessibility : AccessibilityService() {
         if (pkg == candidatePkg) return
 
         candidatePkg = pkg
-
         confirmRunnable?.let { handler.removeCallbacks(it) }
 
         val r = Runnable {
@@ -86,6 +86,9 @@ class OverlayService : Service() {
     private var icon: ImageView? = null
     private var params: WindowManager.LayoutParams? = null
     private var metrics: WindowMetrics? = null
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var retries = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -172,7 +175,7 @@ class OverlayService : Service() {
 
                 MotionEvent.ACTION_UP -> {
                     snap()
-                    request()
+                    requestWithRetry()
                     return true
                 }
             }
@@ -186,12 +189,22 @@ class OverlayService : Service() {
         }
     }
 
-    private fun request() {
+    private fun requestWithRetry() {
+        retries = 0
         Runtime.clearCache()
+        tryResolve()
+    }
+
+    private fun tryResolve() {
         val backend = Runtime.resolvePrivilege(this)
         if (backend != PrivilegeBackend.NONE) {
             PolicyEngine.discovery(this, backend)
             cleanup()
+            return
+        }
+
+        if (retries++ < SHELL_RETRY_MAX) {
+            handler.postDelayed({ tryResolve() }, SHELL_RETRY_DELAY_MS)
         }
     }
 

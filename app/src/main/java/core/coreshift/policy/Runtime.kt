@@ -143,7 +143,8 @@ object Runtime {
         }
     }
 
-    private fun applyAxrunEnv(context: Context, pb: ProcessBuilder) {
+    // VISIBILITY FIX: must be callable from Policy.kt
+    internal fun applyAxrunEnv(context: Context, pb: ProcessBuilder) {
         val bin = context.filesDir.resolve("bin").absolutePath
         val env = pb.environment()
 

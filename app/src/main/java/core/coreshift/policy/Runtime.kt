@@ -98,11 +98,15 @@ object Runtime {
             false
         }
 
+    /**
+     * IMPORTANT:
+     * Privilege detection MUST use a shell primitive,
+     * NOT coreshift_policy_cli.
+     */
     private fun tryShell(context: Context): Boolean =
         try {
             val bin = context.filesDir.resolve("bin").absolutePath
-            val cmd = "$bin/coreshift_policy_cli whoami"
-            val pb = ProcessBuilder("$bin/axrun", "-c", cmd)
+            val pb = ProcessBuilder("$bin/axrun", "-c", "id")
             applyAxrunEnv(context, pb)
             pb.start().waitFor() == 0
         } catch (_: Throwable) {

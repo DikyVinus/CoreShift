@@ -33,7 +33,6 @@ object Runtime {
         val binDir = context.filesDir.resolve("bin")
         if (!binDir.exists()) binDir.mkdirs()
 
-        // directory must be traversable by shell
         binDir.setReadable(true, false)
         binDir.setWritable(true, false)
         binDir.setExecutable(true, false)
@@ -44,7 +43,6 @@ object Runtime {
 
         for (name in files) {
             val out = binDir.resolve(name)
-
             am.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
@@ -53,13 +51,11 @@ object Runtime {
             }
 
             if (name.endsWith(".dex")) {
-                // ART requirement: non-writable dex
-                out.setReadable(true, true)     // 0400
+                out.setReadable(true, true)   // 0400
                 out.setWritable(false, false)
                 out.setExecutable(false, false)
             } else {
-                // MUST be executable by shell (uid 2000)
-                out.setReadable(true, false)    // 0755
+                out.setReadable(true, false)  // 0755
                 out.setWritable(false, false)
                 out.setExecutable(true, false)
             }
@@ -105,7 +101,8 @@ object Runtime {
     private fun tryShell(context: Context): Boolean =
         try {
             val bin = context.filesDir.resolve("bin").absolutePath
-            val pb = ProcessBuilder("$bin/axrun", "-c", "whoami")
+            val cmd = "$bin/coreshift_policy_cli whoami"
+            val pb = ProcessBuilder("$bin/axrun", "-c", cmd)
             applyAxrunEnv(context, pb)
             pb.start().waitFor() == 0
         } catch (_: Throwable) {
@@ -120,15 +117,15 @@ object Runtime {
         wait: Boolean = false
     ) {
         val bin = context.filesDir.resolve("bin").absolutePath
-        val cmd = buildShellCommand("$bin/$binary", args)
+        val command = buildShellCommand("$bin/$binary", args)
 
         val pb = when (backend) {
             PrivilegeBackend.ROOT ->
-                ProcessBuilder("su", "-c", cmd)
+                ProcessBuilder("su", "-c", command)
                     .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
 
             PrivilegeBackend.SHELL ->
-                ProcessBuilder("$bin/axrun", "-c", cmd)
+                ProcessBuilder("$bin/axrun", "-c", command)
                     .also { applyAxrunEnv(context, it) }
 
             else -> return

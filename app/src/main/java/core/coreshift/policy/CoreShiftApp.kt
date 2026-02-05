@@ -1,13 +1,11 @@
 package core.coreshift.policy
 
-import android.Manifest
-import android.app.*
-import android.content.*
-import android.content.pm.PackageManager
+import android.app.Application
+import android.app.Service
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.PaintDrawable
-import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.util.TypedValue
@@ -15,7 +13,6 @@ import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
 import android.widget.Toast
-import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
 
 private const val FOREGROUND_STABLE_MS = 5_000L
@@ -25,30 +22,7 @@ class CoreShiftApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Runtime.install(this)
-
-        val intent = Intent(this, OverlayService::class.java)
-        if (Build.VERSION.SDK_INT >= 26) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-    }
-}
-
-class MainActivity : Activity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        if (!Settings.canDrawOverlays(this)) {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        }
-        finish()
+        startService(Intent(this, OverlayService::class.java))
     }
 }
 
@@ -57,6 +31,13 @@ class CoreShiftAccessibility : android.accessibilityservice.AccessibilityService
     private val handler = Handler(Looper.getMainLooper())
     private var candidatePkg: String? = null
     private var confirmRunnable: Runnable? = null
+
+    override fun onServiceConnected() {
+        // Ensure overlay exists as soon as accessibility binds
+        applicationContext.startService(
+            Intent(applicationContext, OverlayService::class.java)
+        )
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
@@ -93,40 +74,6 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-
-        if (
-            Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            stopSelf()
-            return
-        }
-
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channelId = "coreshift_overlay"
-            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            if (nm.getNotificationChannel(channelId) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(
-                        channelId,
-                        "CoreShift",
-                        NotificationManager.IMPORTANCE_MIN
-                    )
-                )
-            }
-
-            startForeground(
-                1,
-                Notification.Builder(this, channelId)
-                    .setSmallIcon(R.drawable.ic_coreshift)
-                    .setContentTitle("CoreShift")
-                    .setContentText("Ready")
-                    .build()
-            )
-        }
 
         if (!Settings.canDrawOverlays(this)) {
             stopSelf()
@@ -179,7 +126,6 @@ class OverlayService : Service() {
                 "coreshift_policy_cli",
                 args = listOf("boost", "manual")
             )
-
             Toast.makeText(this, "CoreShift executed", Toast.LENGTH_SHORT).show()
         } catch (_: Throwable) {
             Toast.makeText(this, "Execution failed", Toast.LENGTH_SHORT).show()

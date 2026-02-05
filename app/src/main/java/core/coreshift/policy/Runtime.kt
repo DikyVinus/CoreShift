@@ -5,6 +5,7 @@ import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 enum class PrivilegeBackend { ROOT, SHELL, NONE }
 
@@ -104,7 +105,7 @@ object Runtime {
             ProcessBuilder("su", "-c", "id")
                 .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
                 .start()
-                .waitFor() == 0
+                .waitFor(500, TimeUnit.MILLISECONDS)
         } catch (_: Throwable) {
             false
         }
@@ -116,8 +117,13 @@ object Runtime {
             applyAxrunEnv(context, pb)
 
             val p = pb.start()
-            val out = p.inputStream.bufferedReader().readText().trim()
-            p.waitFor()
+
+            if (!p.waitFor(500, TimeUnit.MILLISECONDS)) {
+                p.destroy()
+                return false
+            }
+
+            val out = p.inputStream.bufferedReader().readLine()?.trim() ?: return false
 
             if (out == "shell") {
                 context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)

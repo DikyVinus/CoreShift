@@ -36,6 +36,7 @@ object Runtime {
                 val probe = File(dir, ".probe")
                 FileOutputStream(probe).use { it.write(0) }
                 probe.delete()
+                true
             } catch (_: Throwable) {
                 false
             }
@@ -123,9 +124,24 @@ object Runtime {
     private fun tryShell(context: Context): Boolean =
         try {
             val bin = context.filesDir.resolve("bin").absolutePath
-            val pb = ProcessBuilder("$bin/axrun", "-c", "id")
+            val pb = ProcessBuilder("$bin/axrun", "-c", "whoami")
             applyAxrunEnv(context, pb)
-            pb.start().waitFor() == 0
+
+            val p = pb.start()
+            val out = p.inputStream.bufferedReader().readText().trim()
+            p.waitFor()
+
+            if (out.isNotEmpty()) {
+                // Optional: persist identity for sanity/debug
+                context
+                    .getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("shell_identity", out)
+                    .apply()
+                true
+            } else {
+                false
+            }
         } catch (_: Throwable) {
             false
         }

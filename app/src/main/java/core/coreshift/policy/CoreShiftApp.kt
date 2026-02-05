@@ -29,8 +29,12 @@ class CoreShiftApp : Application() {
         super.onCreate()
         Runtime.install(this)
 
-         resolution.
-        startService(Intent(this, OverlayService::class.java))
+        val i = Intent(this, OverlayService::class.java)
+        if (Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(i)
+        } else {
+            startService(i)
+        }
     }
 }
 
@@ -59,7 +63,7 @@ class CoreShiftAccessibility : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val pkg = event.packageName?.toString() ?: return
-        if (pkg.startsWith("android") || pkg.isBlank()) return
+        if (pkg.isBlank() || pkg.startsWith("android")) return
         if (pkg == candidatePkg) return
 
         candidatePkg = pkg
@@ -205,31 +209,14 @@ class OverlayService : Service() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val nx = sx + (e.rawX - dx).roundToInt()
-                    val ny = sy + (e.rawY - dy).roundToInt()
-                    p.x = nx
-                    p.y = ny.coerceIn(0, maxH - size)
+                    p.x = sx + (e.rawX - dx).roundToInt()
+                    p.y = (sy + (e.rawY - dy).roundToInt())
+                        .coerceIn(0, maxH - size)
                     wmgr.updateViewLayout(ic, p)
                     return true
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    v.performHapticFeedback(
-                        HapticFeedbackConstants.CONTEXT_CLICK,
-                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-                    )
-                    if (Build.VERSION.SDK_INT >= 26) {
-                        vibrator.vibrate(
-                            VibrationEffect.createOneShot(
-                                18,
-                                VibrationEffect.DEFAULT_AMPLITUDE
-                            )
-                        )
-                    } else {
-                        @Suppress("DEPRECATION")
-                        vibrator.vibrate(18)
-                    }
-
                     snap()
                     requestWithRetry()
                     return true

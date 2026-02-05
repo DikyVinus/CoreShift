@@ -29,7 +29,15 @@ class CoreShiftApp : Application() {
         Runtime.install(this)
 
         val i = Intent(this, OverlayService::class.java)
-        if (Build.VERSION.SDK_INT >= 26) {
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            startService(i)
+        } else if (Build.VERSION.SDK_INT >= 26) {
             startForegroundService(i)
         } else {
             startService(i)

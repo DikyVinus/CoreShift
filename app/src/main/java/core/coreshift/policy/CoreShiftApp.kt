@@ -5,7 +5,6 @@ import android.accessibilityservice.AccessibilityService
 import android.content.*
 import android.graphics.*
 import android.graphics.drawable.PaintDrawable
-import android.view.WindowMetrics
 import android.net.Uri
 import android.os.*
 import android.provider.Settings
@@ -16,7 +15,6 @@ import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import android.Manifest
 import android.content.pm.PackageManager
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val FOREGROUND_STABLE_MS = 5_000L
@@ -92,15 +90,10 @@ class OverlayService : Service() {
     private var wm: WindowManager? = null
     private var icon: ImageView? = null
     private var params: WindowManager.LayoutParams? = null
-    private var metrics: WindowMetrics? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var retries = 0
     private var lastResolveAttempt = 0L
-
-    private val vibrator by lazy {
-        getSystemService(VIBRATOR_SERVICE) as Vibrator
-    }
 
     override fun onCreate() {
         super.onCreate()
@@ -144,9 +137,6 @@ class OverlayService : Service() {
         }
 
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        if (Build.VERSION.SDK_INT >= 30) {
-            metrics = wm!!.currentWindowMetrics
-        }
 
         val sizePx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -165,8 +155,8 @@ class OverlayService : Service() {
             isClickable = true
         }
 
-        val w = metrics?.bounds?.width() ?: resources.displayMetrics.widthPixels
-        val h = metrics?.bounds?.height() ?: resources.displayMetrics.heightPixels
+        val w = resources.displayMetrics.widthPixels
+        val h = resources.displayMetrics.heightPixels
 
         params = WindowManager.LayoutParams(
             sizePx,

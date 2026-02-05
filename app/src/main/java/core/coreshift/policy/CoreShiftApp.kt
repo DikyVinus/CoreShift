@@ -12,28 +12,25 @@ import android.util.TypedValue
 import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val FOREGROUND_STABLE_MS = 5_000L
 private const val SHELL_RETRY_DELAY_MS = 300L
 private const val SHELL_RETRY_MAX = 20
+private const val PRIV_RETRY_MIN_INTERVAL_MS = 1_000L
 
 class CoreShiftApp : Application() {
+
     override fun onCreate() {
         super.onCreate()
         Runtime.install(this)
 
-        val backend = Runtime.resolvePrivilege(this)
-        if (backend == PrivilegeBackend.NONE) {
-            val i = Intent(this, OverlayService::class.java)
-            if (Build.VERSION.SDK_INT >= 26)
-                startForegroundService(i)
-            else
-                startService(i)
-        } else {
-            PolicyEngine.discovery(this, backend)
-        }
+         resolution.
+        startService(Intent(this, OverlayService::class.java))
     }
 }
 
@@ -62,6 +59,7 @@ class CoreShiftAccessibility : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val pkg = event.packageName?.toString() ?: return
+        if (pkg.startsWith("android") || pkg.isBlank()) return
         if (pkg == candidatePkg) return
 
         candidatePkg = pkg
@@ -93,6 +91,7 @@ class OverlayService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var retries = 0
+    private var lastResolveAttempt = 0L
 
     private val vibrator by lazy {
         getSystemService(VIBRATOR_SERVICE) as Vibrator
@@ -100,6 +99,16 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            stopSelf()
+            return
+        }
 
         if (Build.VERSION.SDK_INT >= 26) {
             val channelId = "coreshift_overlay"
@@ -114,19 +123,17 @@ class OverlayService : Service() {
                 )
             }
 
-            val n = Notification.Builder(this, channelId)
-                .setSmallIcon(R.drawable.ic_coreshift)
-                .setContentTitle("CoreShift")
-                .setContentText("Waiting for privilege")
-                .build()
-
-            startForeground(1, n)
+            startForeground(
+                1,
+                Notification.Builder(this, channelId)
+                    .setSmallIcon(R.drawable.ic_coreshift)
+                    .setContentTitle("CoreShift")
+                    .setContentText("Awaiting privilege")
+                    .build()
+            )
         }
 
-        if (
-            Runtime.resolvePrivilege(this) != PrivilegeBackend.NONE ||
-            !Settings.canDrawOverlays(this)
-        ) {
+        if (!Settings.canDrawOverlays(this)) {
             stopSelf()
             return
         }
@@ -184,10 +191,14 @@ class OverlayService : Service() {
         private var dy = 0f
 
         override fun onTouch(v: View, e: MotionEvent): Boolean {
+            val p = params ?: return false
+            val wmgr = wm ?: return false
+            val ic = icon ?: return false
+
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    sx = params!!.x
-                    sy = params!!.y
+                    sx = p.x
+                    sy = p.y
                     dx = e.rawX
                     dy = e.rawY
                     return true
@@ -196,10 +207,9 @@ class OverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val nx = sx + (e.rawX - dx).roundToInt()
                     val ny = sy + (e.rawY - dy).roundToInt()
-                    if (abs(nx - params!!.x) < 1 && abs(ny - params!!.y) < 1) return true
-                    params!!.x = nx
-                    params!!.y = ny.coerceIn(0, maxH - size)
-                    wm!!.updateViewLayout(icon, params)
+                    p.x = nx
+                    p.y = ny.coerceIn(0, maxH - size)
+                    wmgr.updateViewLayout(ic, p)
                     return true
                 }
 
@@ -208,7 +218,6 @@ class OverlayService : Service() {
                         HapticFeedbackConstants.CONTEXT_CLICK,
                         HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
                     )
-
                     if (Build.VERSION.SDK_INT >= 26) {
                         vibrator.vibrate(
                             VibrationEffect.createOneShot(
@@ -230,9 +239,11 @@ class OverlayService : Service() {
         }
 
         private fun snap() {
-            params!!.x =
-                if (params!!.x + size / 2 < maxW / 2) 0 else maxW - size
-            wm!!.updateViewLayout(icon, params)
+            val p = params ?: return
+            val wmgr = wm ?: return
+            val ic = icon ?: return
+            p.x = if (p.x + size / 2 < maxW / 2) 0 else maxW - size
+            wmgr.updateViewLayout(ic, p)
         }
     }
 
@@ -243,6 +254,10 @@ class OverlayService : Service() {
     }
 
     private fun tryResolve() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastResolveAttempt < PRIV_RETRY_MIN_INTERVAL_MS) return
+        lastResolveAttempt = now
+
         val backend = Runtime.resolvePrivilege(this)
         if (backend != PrivilegeBackend.NONE) {
             PolicyEngine.discovery(this, backend)

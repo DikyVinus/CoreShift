@@ -94,7 +94,7 @@ private object Eligibility {
     }
 }
 
-/* ===== Rest unchanged ===== */
+/* ===== State ===== */
 
 private object Prefs {
     lateinit var state: android.content.SharedPreferences
@@ -130,7 +130,9 @@ object PolicyEngine {
         executor?.let { return it }
         synchronized(this) {
             executor?.let { return it }
-            executor = Executors.newSingleThreadScheduledExecutor()
+            executor = Executors.newSingleThreadScheduledExecutor {
+                Thread(it, "CoreShift-Policy").apply { isDaemon = true }
+            }
             shutdownArmed.set(false)
             demotedThisBurst.set(false)
             return executor!!
@@ -141,7 +143,7 @@ object PolicyEngine {
         if (!shutdownArmed.compareAndSet(false, true)) return
         executor?.schedule({
             synchronized(this) {
-                executor?.shutdown()
+                executor?.shutdownNow()
                 executor = null
                 shutdownArmed.set(false)
                 demotedThisBurst.set(false)
@@ -151,6 +153,8 @@ object PolicyEngine {
     }
 
     fun onForeground(context: Context, pkg: String) {
+        if (pkg.isBlank() || pkg.startsWith("android")) return
+
         Prefs.init(context)
 
         val exec = ensureExecutor()
@@ -167,8 +171,17 @@ object PolicyEngine {
                 }
 
                 val now = System.currentTimeMillis()
+                val last = Prefs.rate.getLong("w", 0)
+                if (now - last > RATE_WINDOW_MS) {
+                    Prefs.rate.edit().putInt("c", 0).putLong("w", now).apply()
+                }
+
                 if (now - lastExecAt.get() < 1000) return@execute
                 lastExecAt.set(now)
+
+                Prefs.rate.edit()
+                    .putInt("c", Prefs.rate.getInt("c", 0) + 1)
+                    .apply()
 
                 Runtime.exec(
                     context,

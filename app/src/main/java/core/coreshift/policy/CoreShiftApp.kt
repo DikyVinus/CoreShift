@@ -1,9 +1,12 @@
 package core.coreshift.policy
 
-import android.app.*
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.app.*
 import android.content.*
-import android.graphics.*
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.PixelFormat
 import android.graphics.drawable.PaintDrawable
 import android.net.Uri
 import android.os.*
@@ -13,8 +16,6 @@ import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
 import androidx.core.content.ContextCompat
-import android.Manifest
-import android.content.pm.PackageManager
 import kotlin.math.roundToInt
 
 private const val FOREGROUND_STABLE_MS = 5_000L
@@ -28,26 +29,21 @@ class CoreShiftApp : Application() {
         super.onCreate()
         Runtime.install(this)
 
-        val i = Intent(this, OverlayService::class.java)
+        val intent = Intent(this, OverlayService::class.java)
 
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            startService(i)
-        } else if (Build.VERSION.SDK_INT >= 26) {
-            startForegroundService(i)
+        if (Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(intent)
         } else {
-            startService(i)
+            startService(intent)
         }
     }
 }
 
 class MainActivity : Activity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         if (!Settings.canDrawOverlays(this)) {
             startActivity(
                 Intent(
@@ -106,7 +102,8 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        if (Build.VERSION.SDK_INT >= 33 &&
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.POST_NOTIFICATIONS
@@ -119,6 +116,7 @@ class OverlayService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             val channelId = "coreshift_overlay"
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
             if (nm.getNotificationChannel(channelId) == null) {
                 nm.createNotificationChannel(
                     NotificationChannel(
@@ -228,6 +226,7 @@ class OverlayService : Service() {
             val p = params ?: return
             val wmgr = wm ?: return
             val ic = icon ?: return
+
             p.x = if (p.x + size / 2 < maxW / 2) 0 else maxW - size
             wmgr.updateViewLayout(ic, p)
         }

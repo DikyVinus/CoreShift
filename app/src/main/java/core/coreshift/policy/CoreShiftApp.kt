@@ -18,11 +18,10 @@ import kotlin.math.roundToInt
 private const val FOREGROUND_STABLE_MS = 5_000L
 
 class CoreShiftApp : Application() {
-
     override fun onCreate() {
         super.onCreate()
         Runtime.install(this)
-        startService(Intent(this, OverlayService::class.java))
+        // DO NOT start services here
     }
 }
 
@@ -33,10 +32,8 @@ class CoreShiftAccessibility : android.accessibilityservice.AccessibilityService
     private var confirmRunnable: Runnable? = null
 
     override fun onServiceConnected() {
-        // Ensure overlay exists as soon as accessibility binds
-        applicationContext.startService(
-            Intent(applicationContext, OverlayService::class.java)
-        )
+        // This is the ONLY legal place to start the overlay
+        startService(Intent(this, OverlayService::class.java))
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {

@@ -30,9 +30,8 @@ object Runtime {
         val abi = selectAbi()
         val binDir = File(context.filesDir, "bin")
 
-        /* === verify bin dir is actually writable === */
-        fun isReallyWritable(dir: File): Boolean {
-            return try {
+        fun isReallyWritable(dir: File): Boolean =
+            try {
                 val probe = File(dir, ".probe")
                 FileOutputStream(probe).use { it.write(0) }
                 probe.delete()
@@ -40,47 +39,37 @@ object Runtime {
             } catch (_: Throwable) {
                 false
             }
-        }
 
         if (binDir.exists() && !isReallyWritable(binDir)) {
             binDir.deleteRecursively()
         }
-
-        if (!binDir.exists()) {
-            binDir.mkdirs()
-        }
+        if (!binDir.exists()) binDir.mkdirs()
 
         binDir.setReadable(true, false)
         binDir.setWritable(true, false)
         binDir.setExecutable(true, false)
 
         val assetPath = "native/$abi"
-        val am = context.assets
-        val files = am.list(assetPath) ?: return
+        val files = context.assets.list(assetPath) ?: return
 
         for (name in files) {
             val out = File(binDir, name)
-
             if (out.exists()) {
                 out.setWritable(true, true)
-                if (!out.delete()) {
-                    throw IllegalStateException("Failed to delete poisoned file: $out")
-                }
+                if (!out.delete()) error("Failed to delete poisoned file: $out")
             }
-
-            am.open("$assetPath/$name").use { input ->
+            context.assets.open("$assetPath/$name").use { input ->
                 FileOutputStream(out, false).use { output ->
                     input.copyTo(output)
                     output.fd.sync()
                 }
             }
-
             if (name.endsWith(".dex")) {
-                out.setReadable(true, true)     // 0400
+                out.setReadable(true, true)
                 out.setWritable(false, false)
                 out.setExecutable(false, false)
             } else {
-                out.setReadable(true, false)    // 0755
+                out.setReadable(true, false)
                 out.setWritable(false, false)
                 out.setExecutable(true, false)
             }
@@ -89,7 +78,6 @@ object Runtime {
 
     fun resolvePrivilege(context: Context): PrivilegeBackend {
         cached?.let { return it }
-
         synchronized(this) {
             cached?.let { return it }
 
@@ -131,10 +119,8 @@ object Runtime {
             val out = p.inputStream.bufferedReader().readText().trim()
             p.waitFor()
 
-            if (out.isNotEmpty()) {
-                // Optional: persist identity for sanity/debug
-                context
-                    .getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
+            if (out == "shell") {
+                context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
                     .edit()
                     .putString("shell_identity", out)
                     .apply()
@@ -171,9 +157,7 @@ object Runtime {
         if (wait) {
             try { pb.start().waitFor() } catch (_: Throwable) {}
         } else {
-            bg.execute {
-                try { pb.start() } catch (_: Throwable) {}
-            }
+            bg.execute { try { pb.start() } catch (_: Throwable) {} }
         }
     }
 

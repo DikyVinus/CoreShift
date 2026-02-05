@@ -31,8 +31,8 @@ object Runtime {
         val abi = selectAbi()
         val binDir = File(context.filesDir, "bin")
 
-        fun isReallyWritable(dir: File): Boolean =
-            try {
+        fun isReallyWritable(dir: File): Boolean {
+            return try {
                 val probe = File(dir, ".probe")
                 FileOutputStream(probe).use { it.write(0) }
                 probe.delete()
@@ -40,6 +40,7 @@ object Runtime {
             } catch (_: Throwable) {
                 false
             }
+        }
 
         if (binDir.exists() && !isReallyWritable(binDir)) {
             binDir.deleteRecursively()
@@ -99,8 +100,8 @@ object Runtime {
         }
     }
 
-    private fun tryRoot(context: Context): Boolean =
-        try {
+    private fun tryRoot(context: Context): Boolean {
+        return try {
             val bin = context.filesDir.resolve("bin").absolutePath
             ProcessBuilder("su", "-c", "id")
                 .apply { environment()["PATH"] = "$bin:/system/bin:/system/xbin" }
@@ -109,9 +110,10 @@ object Runtime {
         } catch (_: Throwable) {
             false
         }
+    }
 
-    private fun tryShell(context: Context): Boolean =
-        try {
+    private fun tryShell(context: Context): Boolean {
+        return try {
             val bin = context.filesDir.resolve("bin").absolutePath
             val pb = ProcessBuilder("$bin/axrun", "-c", "whoami")
             applyAxrunEnv(context, pb)
@@ -123,7 +125,10 @@ object Runtime {
                 return false
             }
 
-            val out = p.inputStream.bufferedReader().readLine()?.trim() ?: return false
+            val out = p.inputStream.bufferedReader()
+                .readLine()
+                ?.trim()
+                ?: return false
 
             if (out == "shell") {
                 context.getSharedPreferences("coreshift_state", Context.MODE_PRIVATE)
@@ -137,6 +142,7 @@ object Runtime {
         } catch (_: Throwable) {
             false
         }
+    }
 
     fun exec(
         context: Context,

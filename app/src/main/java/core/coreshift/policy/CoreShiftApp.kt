@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.*
 import android.graphics.*
 import android.graphics.drawable.PaintDrawable
+import android.view.WindowMetrics
 import android.net.Uri
 import android.os.*
 import android.provider.Settings

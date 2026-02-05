@@ -38,7 +38,7 @@ jobs:
         run: |
           set -e
           if [ -z "$RELEASE_KEYSTORE_B64" ]; then
-            echo "No keystore provided, falling back to debug signing"
+            echo "No keystore provided, using debug signing"
             exit 0
           fi
 
@@ -46,7 +46,7 @@ jobs:
           echo "RELEASE_KEYSTORE_PATH=$PWD/release.keystore" >> "$GITHUB_ENV"
           ls -lh release.keystore
 
-      - name: Build release APK
+      - name: Build release APK (verbose)
         shell: bash
         env:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -55,7 +55,11 @@ jobs:
         run: |
           set -e
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --warning-mode all
 
       - name: Collect APK
         shell: bash

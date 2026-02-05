@@ -28,12 +28,16 @@ jobs:
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Build debug APK
+      - name: Build debug APK (verbose)
         shell: bash
         run: |
           set -e
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --warning-mode all
 
       - name: Collect APK
         shell: bash

@@ -1,7 +1,6 @@
 package core.coreshift.policy
 
 import android.Manifest
-import android.accessibilityservice.AccessibilityService
 import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
@@ -15,13 +14,11 @@ import android.util.TypedValue
 import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
 
 private const val FOREGROUND_STABLE_MS = 5_000L
-private const val SHELL_RETRY_DELAY_MS = 300L
-private const val SHELL_RETRY_MAX = 20
-private const val PRIV_RETRY_MIN_INTERVAL_MS = 1_000L
 
 class CoreShiftApp : Application() {
 
@@ -30,7 +27,6 @@ class CoreShiftApp : Application() {
         Runtime.install(this)
 
         val intent = Intent(this, OverlayService::class.java)
-
         if (Build.VERSION.SDK_INT >= 26) {
             startForegroundService(intent)
         } else {
@@ -56,7 +52,7 @@ class MainActivity : Activity() {
     }
 }
 
-class CoreShiftAccessibility : AccessibilityService() {
+class CoreShiftAccessibility : android.accessibilityservice.AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var candidatePkg: String? = null
@@ -95,10 +91,6 @@ class OverlayService : Service() {
     private var icon: ImageView? = null
     private var params: WindowManager.LayoutParams? = null
 
-    private val handler = Handler(Looper.getMainLooper())
-    private var retries = 0
-    private var lastResolveAttempt = 0L
-
     override fun onCreate() {
         super.onCreate()
 
@@ -116,7 +108,6 @@ class OverlayService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             val channelId = "coreshift_overlay"
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
             if (nm.getNotificationChannel(channelId) == null) {
                 nm.createNotificationChannel(
                     NotificationChannel(
@@ -132,7 +123,7 @@ class OverlayService : Service() {
                 Notification.Builder(this, channelId)
                     .setSmallIcon(R.drawable.ic_coreshift)
                     .setContentTitle("CoreShift")
-                    .setContentText("Awaiting privilege")
+                    .setContentText("Ready")
                     .build()
             )
         }
@@ -176,93 +167,23 @@ class OverlayService : Service() {
             y = h / 3
         }
 
-        icon!!.setOnTouchListener(DragTouchListener(sizePx, w, h))
+        icon!!.setOnClickListener { executeOnce() }
         wm!!.addView(icon, params)
     }
 
-    private inner class DragTouchListener(
-        private val size: Int,
-        private val maxW: Int,
-        private val maxH: Int
-    ) : View.OnTouchListener {
-
-        private var sx = 0
-        private var sy = 0
-        private var dx = 0f
-        private var dy = 0f
-
-        override fun onTouch(v: View, e: MotionEvent): Boolean {
-            val p = params ?: return false
-            val wmgr = wm ?: return false
-            val ic = icon ?: return false
-
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    sx = p.x
-                    sy = p.y
-                    dx = e.rawX
-                    dy = e.rawY
-                    return true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    p.x = sx + (e.rawX - dx).roundToInt()
-                    p.y = (sy + (e.rawY - dy).roundToInt())
-                        .coerceIn(0, maxH - size)
-                    wmgr.updateViewLayout(ic, p)
-                    return true
-                }
-
-                MotionEvent.ACTION_UP -> {
-                    snap()
-                    requestWithRetry()
-                    return true
-                }
-            }
-            return false
-        }
-
-        private fun snap() {
-            val p = params ?: return
-            val wmgr = wm ?: return
-            val ic = icon ?: return
-
-            p.x = if (p.x + size / 2 < maxW / 2) 0 else maxW - size
-            wmgr.updateViewLayout(ic, p)
-        }
-    }
-
-    private fun requestWithRetry() {
-        retries = 0
-        Runtime.clearCache()
-        tryResolve()
-    }
-
-    private fun tryResolve() {
-        val now = SystemClock.uptimeMillis()
-        if (now - lastResolveAttempt < PRIV_RETRY_MIN_INTERVAL_MS) return
-        lastResolveAttempt = now
-
-        val backend = Runtime.resolvePrivilege(this)
-        if (backend != PrivilegeBackend.NONE) {
-            PolicyEngine.discovery(this, backend)
-            cleanup()
-            return
-        }
-
-        if (retries++ < SHELL_RETRY_MAX) {
-            handler.postDelayed({ tryResolve() }, SHELL_RETRY_DELAY_MS)
-        }
-    }
-
-    private fun cleanup() {
+    private fun executeOnce() {
         try {
-            icon?.let { wm?.removeViewImmediate(it) }
-        } catch (_: Throwable) {}
-        icon = null
-        params = null
-        wm = null
-        stopSelf()
+            Runtime.exec(
+                this,
+                PrivilegeBackend.SHELL,
+                "coreshift_policy_cli",
+                args = listOf("boost", "manual")
+            )
+
+            Toast.makeText(this, "CoreShift executed", Toast.LENGTH_SHORT).show()
+        } catch (_: Throwable) {
+            Toast.makeText(this, "Execution failed", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onBind(intent: Intent?) = null

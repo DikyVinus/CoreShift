@@ -101,7 +101,7 @@ No other layer is allowed to perform side effects.
 - No policy in mid-level  
 - No direct syscall usage above low_level  
 - Modules are pure transformation units  
-- All external interaction flows through Action → Effect boundary 1  
+- All external interaction flows through Action → Effect boundary  
 
 ---
 
